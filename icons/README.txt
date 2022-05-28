@@ -1,0 +1,1 @@
+﻿Put skill pngs in this folder.

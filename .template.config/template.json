@@ -1,0 +1,33 @@
+﻿{
+  "author": "Azumatt",
+  "classifications": [
+    "All Managers Mod"
+  ],
+  "name": "AllManagersModTemplate",
+  "identity": "All.Managers.Mod.Template",
+  "shortName": "ammt",
+  "tags": {
+    "language": "C#",
+    "type": "project"
+  },
+  "sourceName": "AllManagersModTemplate",
+  "preferNameDirectory": "true",
+  "symbols": {
+    "AuthorName": {
+      "type": "parameter",
+      "description": "The name of the person that you want to call the author.",
+      "datatype": "string",
+      "defaultValue": "azumatt",
+      "replaces": "{azumatt}"
+    }
+  },
+  "sources": [
+    {
+      "modifiers": [
+        {
+          "exclude": [ ".git/**", ".idea/**", ".vs/**", "obj/**", "bin/**", "AllManagersModTemplate.sln", "AllManagersModTemplate.sln.DotSettings.user" ]
+        }
+      ]
+    }
+  ]
+}
