@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Linq;
 using System.Reflection;
 using System.Reflection.Emit;
@@ -47,6 +48,15 @@ public class CraftingStationList
 	public void Add(string customTable, int level) => Stations.Add(new CraftingStationConfig { Table = CraftingTable.Custom, level = level, custom = customTable });
 }
 
+[PublicAPI]
+public class ItemRecipe
+{
+	public readonly RequiredResourceList RequiredItems = new();
+	public readonly RequiredResourceList RequiredUpgradeItems = new();
+	public readonly CraftingStationList Crafting = new();
+	public int CraftAmount = 1;
+}
+
 public struct Requirement
 {
 	public string itemName;
@@ -76,44 +86,45 @@ public class Item
 	private static readonly List<Item> registeredItems = new();
 	private static readonly Dictionary<ItemDrop, Item> itemDropMap = new();
 	private static Dictionary<Item, List<Recipe>> activeRecipes = new();
-	private static Dictionary<Item, ItemConfig> itemConfigs = new();
+	private static Dictionary<Item, Dictionary<string, ItemConfig>> itemCraftConfigs = new();
 
 	public static bool ConfigurationEnabled = true;
+	public bool Configurable = true;
 
 	public readonly GameObject Prefab;
+	
+	[Description("Specifies the resources needed to craft the item.\nUse .Add to add resources with their internal ID and an amount.\nUse one .Add for each resource type the item should need.")]
+	public RequiredResourceList RequiredItems => this[""].RequiredItems;
+	
+	[Description("Specifies the resources needed to upgrade the item.\nUse .Add to add resources with their internal ID and an amount. This amount will be multipled by the item quality level.\nUse one .Add for each resource type the upgrade should need.")]
+	public RequiredResourceList RequiredUpgradeItems => this[""].RequiredUpgradeItems;
+	
+	[Description("Specifies the crafting station needed to craft the item.\nUse .Add to add a crafting station, using the CraftingTable enum and a minimum level for the crafting station.\nUse one .Add for each crafting station.")]
+	public CraftingStationList Crafting => this[""].Crafting;
 
-	/// <summary>
-	/// Specifies the resources needed to craft the item.
-	/// <para>Use .Add to add resources with their internal ID and an amount.</para>
-	/// <para>Use one .Add for each resource type the item should need.</para>
-	/// </summary>
-	public readonly RequiredResourceList RequiredItems = new();
-
-	/// <summary>
-	/// Specifies the resources needed to upgrade the item.
-	/// <para>Use .Add to add resources with their internal ID and an amount. This amount will be multipled by the item quality level.</para>
-	/// <para>Use one .Add for each resource type the item should need.</para>
-	/// </summary>
-	public readonly RequiredResourceList RequiredUpgradeItems = new();
-
-	/// <summary>
-	/// Specifies the crafting station needed to craft the item.
-	/// <para>Use .Add to add a crafting station, using the CraftingTable enum and a minimum level for the crafting station.</para>
-	/// <para>Use one .Add for each crafting station.</para>
-	/// </summary>
-	public readonly CraftingStationList Crafting = new();
-
-	/// <summary>
-	/// Specifies the number of items that should be given to the player with a single craft of the item.
-	/// <para>Defaults to 1.</para>
-	/// </summary>
-	public int CraftAmount = 1;
-
-	/// <summary>
-	/// Specifies the maximum required crafting station level to upgrade and repair the item.
-	/// <para>Default is calculated from crafting station level and maximum quality.</para>
-	/// </summary>
+	[Description("Specifies the number of items that should be given to the player with a single craft of the item.\nDefaults to 1.")]
+	public int CraftAmount
+	{
+		get => this[""].CraftAmount;
+		set => this[""].CraftAmount = value;
+	} 
+	
+	[Description("Specifies the maximum required crafting station level to upgrade and repair the item.\nDefault is calculated from crafting station level and maximum quality.")]
 	public int MaximumRequiredStationLevel = int.MaxValue;
+
+	public Dictionary<string, ItemRecipe> Recipes = new();
+
+	public ItemRecipe this[string name]
+	{
+		get
+		{
+			if (Recipes.TryGetValue(name, out ItemRecipe recipe))
+			{
+				return recipe;
+			}
+			return Recipes[name] = new ItemRecipe();
+		}
+	}
 
 	private LocalizeKey? _name;
 
@@ -182,15 +193,18 @@ public class Item
 	{
 		[UsedImplicitly] public int? Order;
 		[UsedImplicitly] public bool? Browsable;
+		[UsedImplicitly] public string? Category;
 		[UsedImplicitly] public Action<ConfigEntryBase>? CustomDrawer;
 	}
+
+	private static object? configManager;
 
 	internal static void Patch_FejdStartup()
 	{
 		Assembly? bepinexConfigManager = AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a => a.GetName().Name == "ConfigurationManager");
 
 		Type? configManagerType = bepinexConfigManager?.GetType("ConfigurationManager.ConfigurationManager");
-		object? configManager = configManagerType == null ? null : BepInEx.Bootstrap.Chainloader.ManagerObject.GetComponent(configManagerType);
+		configManager = configManagerType == null ? null : BepInEx.Bootstrap.Chainloader.ManagerObject.GetComponent(configManagerType);
 
 		void reloadConfigDisplay() => configManagerType?.GetMethod("BuildSettingList")!.Invoke(configManager, Array.Empty<object>());
 
@@ -199,91 +213,99 @@ public class Item
 			bool SaveOnConfigSet = plugin.Config.SaveOnConfigSet;
 			plugin.Config.SaveOnConfigSet = false;
 
-			foreach (Item item in registeredItems)
+			foreach (Item item in registeredItems.Where(i => i.Configurable))
 			{
-				ItemConfig cfg = itemConfigs[item] = new ItemConfig();
-
-				if (item.Crafting.Stations.Count > 0)
+				itemCraftConfigs[item] = new Dictionary<string, ItemConfig>();
+				foreach (string configKey in item.Recipes.Keys.DefaultIfEmpty(""))
 				{
-					string localizedName = new Regex("['[\"\\]]").Replace(english.Localize(item.Prefab.GetComponent<ItemDrop>().m_itemData.m_shared.m_name), "").Trim();
 					int order = 0;
 
-					List<ConfigurationManagerAttributes> hideWhenNoneAttributes = new();
+					string configSuffix = configKey == "" ? "" : $" ({configKey})";
+					ItemConfig cfg = itemCraftConfigs[item][configKey] = new ItemConfig();
 
-					cfg.table = config(localizedName, "Crafting Station", item.Crafting.Stations.First().Table, new ConfigDescription($"Crafting station where {localizedName} is available.", null, new ConfigurationManagerAttributes { Order = --order }));
-					ConfigurationManagerAttributes customTableAttributes = new() { Order = --order, Browsable = cfg.table.Value == CraftingTable.Custom };
-					cfg.customTable = config(localizedName, "Custom Crafting Station", item.Crafting.Stations.First().custom ?? "", new ConfigDescription("", null, customTableAttributes));
-
-					void TableConfigChanged(object o, EventArgs e)
+					if (item.Crafting.Stations.Count > 0)
 					{
-						if (activeRecipes.Count > 0)
+						string nameKey = item.Prefab.GetComponent<ItemDrop>().m_itemData.m_shared.m_name;
+						string englishName = new Regex("['[\"\\]]").Replace(english.Localize(nameKey), "").Trim();
+						string localizedName = Localization.instance.Localize(nameKey).Trim();
+
+						List<ConfigurationManagerAttributes> hideWhenNoneAttributes = new();
+
+						cfg.table = config(englishName, "Crafting Station" + configSuffix, item.Recipes[configKey].Crafting.Stations.First().Table, new ConfigDescription($"Crafting station where {englishName} is available.", null, new ConfigurationManagerAttributes { Order = --order, Category = localizedName }));
+						ConfigurationManagerAttributes customTableAttributes = new() { Order = --order, Browsable = cfg.table.Value == CraftingTable.Custom, Category = localizedName };
+						cfg.customTable = config(englishName, "Custom Crafting Station" + configSuffix, item.Recipes[configKey].Crafting.Stations.First().custom ?? "", new ConfigDescription("", null, customTableAttributes));
+
+						void TableConfigChanged(object o, EventArgs e)
 						{
-							if (cfg.table.Value is CraftingTable.None)
+							if (activeRecipes.Count > 0)
 							{
-								activeRecipes[item].First().m_craftingStation = null;
+								if (cfg.table.Value is CraftingTable.None)
+								{
+									activeRecipes[item].First().m_craftingStation = null;
+								}
+								else if (cfg.table.Value is CraftingTable.Custom)
+								{
+									activeRecipes[item].First().m_craftingStation = ZNetScene.instance.GetPrefab(cfg.customTable.Value)?.GetComponent<CraftingStation>();
+								}
+								else
+								{
+									activeRecipes[item].First().m_craftingStation = ZNetScene.instance.GetPrefab(((InternalName)typeof(CraftingTable).GetMember(cfg.table.Value.ToString())[0].GetCustomAttributes(typeof(InternalName)).First()).internalName).GetComponent<CraftingStation>();
+								}
 							}
-							else if (cfg.table.Value is CraftingTable.Custom)
+							customTableAttributes.Browsable = cfg.table.Value == CraftingTable.Custom;
+							foreach (ConfigurationManagerAttributes attributes in hideWhenNoneAttributes)
 							{
-								activeRecipes[item].First().m_craftingStation = ZNetScene.instance.GetPrefab(cfg.customTable.Value)?.GetComponent<CraftingStation>();
+								attributes.Browsable = cfg.table.Value != CraftingTable.None;
 							}
-							else
+							reloadConfigDisplay();
+						}
+						cfg.table.SettingChanged += TableConfigChanged;
+						cfg.customTable.SettingChanged += TableConfigChanged;
+
+						ConfigurationManagerAttributes tableLevelAttributes = new() { Order = --order, Browsable = cfg.table.Value != CraftingTable.None, Category = localizedName };
+						hideWhenNoneAttributes.Add(tableLevelAttributes);
+						cfg.tableLevel = config(englishName, "Crafting Station Level" + configSuffix, item.Recipes[configKey].Crafting.Stations.First().level, new ConfigDescription($"Required crafting station level to craft {englishName}.", null, tableLevelAttributes));
+						cfg.tableLevel.SettingChanged += (_, _) =>
+						{
+							if (activeRecipes.Count > 0)
 							{
-								activeRecipes[item].First().m_craftingStation = ZNetScene.instance.GetPrefab(((InternalName)typeof(CraftingTable).GetMember(cfg.table.Value.ToString())[0].GetCustomAttributes(typeof(InternalName)).First()).internalName).GetComponent<CraftingStation>();
+								activeRecipes[item].First().m_minStationLevel = cfg.tableLevel.Value;
+							}
+						};
+						if (item.Prefab.GetComponent<ItemDrop>().m_itemData.m_shared.m_maxQuality > 1)
+						{
+							cfg.maximumTableLevel = config(englishName, "Maximum Crafting Station Level" + configSuffix, item.MaximumRequiredStationLevel == int.MaxValue ? item.Recipes[configKey].Crafting.Stations.First().level + item.Prefab.GetComponent<ItemDrop>().m_itemData.m_shared.m_maxQuality - 1 : item.MaximumRequiredStationLevel, new ConfigDescription($"Maximum crafting station level to upgrade and repair {englishName}.", null, tableLevelAttributes));
+						}
+
+						ConfigEntry<string> itemConfig(string name, string value, string desc)
+						{
+							ConfigurationManagerAttributes attributes = new() { CustomDrawer = drawConfigTable, Order = --order, Browsable = cfg.table.Value != CraftingTable.None, Category = localizedName };
+							hideWhenNoneAttributes.Add(attributes);
+							return config(englishName, name, value, new ConfigDescription(desc, null, attributes));
+						}
+
+						cfg.craft = itemConfig("Crafting Costs" + configSuffix, new SerializedRequirements(item.Recipes[configKey].RequiredItems.Requirements).ToString(), $"Item costs to craft {englishName}");
+						if (item.Prefab.GetComponent<ItemDrop>().m_itemData.m_shared.m_maxQuality > 1)
+						{
+							cfg.upgrade = itemConfig("Upgrading Costs" + configSuffix, new SerializedRequirements(item.Recipes[configKey].RequiredUpgradeItems.Requirements).ToString(), $"Item costs per level to upgrade {englishName}");
+						}
+
+						void ConfigChanged(object o, EventArgs e)
+						{
+							if (ObjectDB.instance && activeRecipes.ContainsKey(item))
+							{
+								foreach (Recipe recipe in activeRecipes[item])
+								{
+									recipe.m_resources = SerializedRequirements.toPieceReqs(ObjectDB.instance, new SerializedRequirements(cfg.craft.Value), new SerializedRequirements(cfg.upgrade?.Value ?? ""));
+								}
 							}
 						}
-						customTableAttributes.Browsable = cfg.table.Value == CraftingTable.Custom;
-						foreach (ConfigurationManagerAttributes attributes in hideWhenNoneAttributes)
+
+						cfg.craft.SettingChanged += ConfigChanged;
+						if (cfg.upgrade != null)
 						{
-							attributes.Browsable = cfg.table.Value != CraftingTable.None;
+							cfg.upgrade.SettingChanged += ConfigChanged;
 						}
-						reloadConfigDisplay();
-					}
-					cfg.table.SettingChanged += TableConfigChanged;
-					cfg.customTable.SettingChanged += TableConfigChanged;
-
-					ConfigurationManagerAttributes tableLevelAttributes = new() { Order = --order, Browsable = cfg.table.Value != CraftingTable.None };
-					hideWhenNoneAttributes.Add(tableLevelAttributes);
-					cfg.tableLevel = config(localizedName, "Crafting Station Level", item.Crafting.Stations.First().level, new ConfigDescription($"Required crafting station level to craft {localizedName}.", null, tableLevelAttributes));
-					cfg.tableLevel.SettingChanged += (_, _) =>
-					{
-						if (activeRecipes.Count > 0)
-						{
-							activeRecipes[item].First().m_minStationLevel = cfg.tableLevel.Value;
-						}
-					};
-					if (item.Prefab.GetComponent<ItemDrop>().m_itemData.m_shared.m_maxQuality > 1)
-					{
-						cfg.maximumTableLevel = config(localizedName, "Maximum Crafting Station Level", item.MaximumRequiredStationLevel == int.MaxValue ? item.Crafting.Stations.First().level + item.Prefab.GetComponent<ItemDrop>().m_itemData.m_shared.m_maxQuality - 1 : item.MaximumRequiredStationLevel, new ConfigDescription($"Maximum crafting station level to upgrade and repair {localizedName}.", null, tableLevelAttributes));
-					}
-
-					ConfigEntry<string> itemConfig(string name, string value, string desc)
-					{
-						ConfigurationManagerAttributes attributes = new() { CustomDrawer = drawConfigTable, Order = --order, Browsable = cfg.table.Value != CraftingTable.None };
-						hideWhenNoneAttributes.Add(attributes);
-						return config(localizedName, name, value, new ConfigDescription(desc, null, attributes));
-					}
-
-					cfg.craft = itemConfig("Crafting Costs", new SerializedRequirements(item.RequiredItems.Requirements).ToString(), $"Item costs to craft {localizedName}");
-					if (item.Prefab.GetComponent<ItemDrop>().m_itemData.m_shared.m_maxQuality > 1)
-					{
-						cfg.upgrade = itemConfig("Upgrading Costs", new SerializedRequirements(item.RequiredUpgradeItems.Requirements).ToString(), $"Item costs per level to upgrade {localizedName}");
-					}
-
-					void ConfigChanged(object o, EventArgs e)
-					{
-						if (ObjectDB.instance && activeRecipes.ContainsKey(item))
-						{
-							foreach (Recipe recipe in activeRecipes[item])
-							{
-								recipe.m_resources = SerializedRequirements.toPieceReqs(ObjectDB.instance, new SerializedRequirements(cfg.craft.Value), new SerializedRequirements(cfg.upgrade?.Value ?? ""));
-							}
-						}
-					}
-
-					cfg.craft.SettingChanged += ConfigChanged;
-					if (cfg.upgrade != null)
-					{
-						cfg.upgrade.SettingChanged += ConfigChanged;
 					}
 				}
 			}
@@ -296,7 +318,7 @@ public class Item
 		}
 	}
 
-	[HarmonyPriority(Priority.VeryHigh)]
+	[HarmonyPriority(Priority.Last)]
 	internal static void Patch_ObjectDBInit(ObjectDB __instance)
 	{
 		if (__instance.GetItemPrefab("Wood") == null)
@@ -308,37 +330,42 @@ public class Item
 		{
 			List<Recipe> recipes = new();
 
-			itemConfigs.TryGetValue(item, out ItemConfig? cfg);
-			foreach (CraftingStationConfig station in item.Crafting.Stations)
+			itemCraftConfigs.TryGetValue(item, out Dictionary<string, ItemConfig> cfgs);
+			foreach (KeyValuePair<string, ItemRecipe> kv in item.Recipes)
 			{
-				Recipe recipe = ScriptableObject.CreateInstance<Recipe>();
-				recipe.name = $"{item.Prefab.name}_Recipe_{station.Table.ToString()}";
-				recipe.m_amount = item.CraftAmount;
-				recipe.m_enabled = true;
-				recipe.m_item = item.Prefab.GetComponent<ItemDrop>();
-				recipe.m_resources = SerializedRequirements.toPieceReqs(__instance, cfg == null ? new SerializedRequirements(item.RequiredItems.Requirements) : new SerializedRequirements(cfg.craft.Value), cfg == null ? new SerializedRequirements(item.RequiredUpgradeItems.Requirements) : new SerializedRequirements(cfg.upgrade?.Value ?? ""));
-				if ((cfg == null || recipes.Count > 0 ? station.Table : cfg.table.Value) is CraftingTable.None)
+				foreach (CraftingStationConfig station in kv.Value.Crafting.Stations)
 				{
-					recipe.m_craftingStation = null;
-				}
-				else if ((cfg == null || recipes.Count > 0 ? station.Table : cfg.table.Value) is CraftingTable.Custom)
-				{
-					if (ZNetScene.instance.GetPrefab(cfg == null || recipes.Count > 0 ? station.custom : cfg.customTable.Value) is { } craftingTable)
+					ItemConfig? cfg = cfgs?[kv.Key];
+
+					Recipe recipe = ScriptableObject.CreateInstance<Recipe>();
+					recipe.name = $"{item.Prefab.name}_Recipe_{station.Table.ToString()}";
+					recipe.m_amount = item[kv.Key].CraftAmount;
+					recipe.m_enabled = true;
+					recipe.m_item = item.Prefab.GetComponent<ItemDrop>();
+					recipe.m_resources = SerializedRequirements.toPieceReqs(__instance, cfg == null ? new SerializedRequirements(item[kv.Key].RequiredItems.Requirements) : new SerializedRequirements(cfg.craft.Value), cfg == null ? new SerializedRequirements(item[kv.Key].RequiredUpgradeItems.Requirements) : new SerializedRequirements(cfg.upgrade?.Value ?? ""));
+					if ((cfg == null || recipes.Count > 0 ? station.Table : cfg.table.Value) is CraftingTable.None)
 					{
-						recipe.m_craftingStation = craftingTable.GetComponent<CraftingStation>();
+						recipe.m_craftingStation = null;
+					}
+					else if ((cfg == null || recipes.Count > 0 ? station.Table : cfg.table.Value) is CraftingTable.Custom)
+					{
+						if (ZNetScene.instance.GetPrefab(cfg == null || recipes.Count > 0 ? station.custom : cfg.customTable.Value) is { } craftingTable)
+						{
+							recipe.m_craftingStation = craftingTable.GetComponent<CraftingStation>();
+						}
+						else
+						{
+							Debug.LogWarning($"Custom crafting station '{(cfg == null || recipes.Count > 0 ? station.custom : cfg.customTable.Value)}' does not exist");
+						}
 					}
 					else
 					{
-						Debug.LogWarning($"Custom crafting station '{(cfg == null || recipes.Count > 0 ? station.custom : cfg.customTable.Value)}' does not exist");
+						recipe.m_craftingStation = ZNetScene.instance.GetPrefab(((InternalName)typeof(CraftingTable).GetMember((cfg == null || recipes.Count > 0 ? station.Table : cfg.table.Value).ToString())[0].GetCustomAttributes(typeof(InternalName)).First()).internalName).GetComponent<CraftingStation>();
 					}
-				}
-				else
-				{
-					recipe.m_craftingStation = ZNetScene.instance.GetPrefab(((InternalName)typeof(CraftingTable).GetMember((cfg == null || recipes.Count > 0 ? station.Table : cfg.table.Value).ToString())[0].GetCustomAttributes(typeof(InternalName)).First()).internalName).GetComponent<CraftingStation>();
-				}
-				recipe.m_minStationLevel = cfg == null || recipes.Count > 0 ? station.level : cfg.tableLevel.Value;
+					recipe.m_minStationLevel = cfg == null || recipes.Count > 0 ? station.level : cfg.tableLevel.Value;
 
-				recipes.Add(recipe);
+					recipes.Add(recipe);
+				}
 			}
 
 			activeRecipes[item] = recipes;
@@ -351,7 +378,26 @@ public class Item
 	{
 		if (itemDropMap.TryGetValue(__instance.m_item, out Item item))
 		{
-			__result = Mathf.Min(Mathf.Max(1, __instance.m_minStationLevel) + (quality - 1), itemConfigs[item].maximumTableLevel?.Value ?? item.MaximumRequiredStationLevel);
+			IEnumerable<ItemConfig> configs;
+			if (!itemCraftConfigs.TryGetValue(item, out Dictionary<string, ItemConfig> itemConfigs))
+			{
+				configs = Enumerable.Empty<ItemConfig>();
+			}
+			else if (Player.m_localPlayer.GetCurrentCraftingStation() is { } currentCraftingStation)
+			{
+				string stationName = Utils.GetPrefabName(currentCraftingStation.gameObject);
+				configs = itemConfigs.Where(c => c.Value.table.Value switch
+				{
+					CraftingTable.None => false,
+					CraftingTable.Custom => c.Value.customTable.Value == stationName,
+					_ => ((InternalName)typeof(CraftingTable).GetMember(c.Value.table.Value.ToString())[0].GetCustomAttributes(typeof(InternalName)).First()).internalName == stationName
+				}).Select(c => c.Value);
+			}
+			else
+			{
+				configs = itemConfigs.Values;
+			}
+			__result = Mathf.Min(Mathf.Max(1, __instance.m_minStationLevel) + (quality - 1), configs.Where(cfg => cfg.maximumTableLevel is not null).Select(cfg => cfg.maximumTableLevel!.Value).DefaultIfEmpty(item.MaximumRequiredStationLevel).Max());
 		}
 	}
 
@@ -380,6 +426,8 @@ public class Item
 		List<Requirement> newReqs = new();
 		bool wasUpdated = false;
 
+		int RightColumnWidth = (int)(configManager?.GetType().GetProperty("RightColumnWidth", BindingFlags.Instance | BindingFlags.NonPublic)!.GetGetMethod(true).Invoke(configManager, Array.Empty<object>()) ?? 130);
+
 		GUILayout.BeginVertical();
 		foreach (Requirement req in new SerializedRequirements((string)cfg.BoxedValue).Reqs)
 		{
@@ -392,7 +440,7 @@ public class Item
 				wasUpdated = true;
 			}
 
-			string newItemName = GUILayout.TextField(req.itemName);
+			string newItemName = GUILayout.TextField(req.itemName, new GUIStyle(GUI.skin.textField) { fixedWidth = RightColumnWidth - 40 - 21 - 21 - 9 });
 			string itemName = locked ? req.itemName : newItemName;
 			wasUpdated = wasUpdated || itemName != req.itemName;
 
@@ -550,9 +598,23 @@ public class Item
 [PublicAPI]
 public class LocalizeKey
 {
+	private static readonly List<LocalizeKey> keys = new();
+
 	public readonly string Key;
+	public readonly Dictionary<string, string> Localizations = new();
 
 	public LocalizeKey(string key) => Key = key.Replace("$", "");
+
+	public void Alias(string alias)
+	{
+		Localizations.Clear();
+		if (!alias.Contains("$"))
+		{
+			alias = $"${alias}";
+		}
+		Localizations["alias"] = alias;
+		Localization.instance.AddWord(Key, Localization.instance.Localize(alias));
+	}
 
 	public LocalizeKey English(string key) => addForLang("English", key);
 	public LocalizeKey Swedish(string key) => addForLang("Swedish", key);
@@ -591,6 +653,7 @@ public class LocalizeKey
 
 	private LocalizeKey addForLang(string lang, string value)
 	{
+		Localizations[lang] = value;
 		if (Localization.instance.GetSelectedLanguage() == lang)
 		{
 			Localization.instance.AddWord(Key, value);
@@ -600,6 +663,22 @@ public class LocalizeKey
 			Localization.instance.AddWord(Key, value);
 		}
 		return this;
+	}
+
+	[HarmonyPriority(Priority.LowerThanNormal)]
+	internal static void AddLocalizedKeys(Localization __instance, string language)
+	{
+		foreach (LocalizeKey key in keys)
+		{
+			if (key.Localizations.TryGetValue(language, out string Translation) || key.Localizations.TryGetValue("English", out Translation))
+			{
+				__instance.AddWord(key.Key, Translation);
+			}
+			else if (key.Localizations.TryGetValue("alias", out string alias))
+			{
+				Localization.instance.AddWord(key.Key, Localization.instance.Localize(alias));
+			}
+		}
 	}
 }
 
@@ -616,6 +695,7 @@ public static class PrefabManager
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(ZNetScene), nameof(ZNetScene.Awake)), new HarmonyMethod(AccessTools.DeclaredMethod(typeof(PrefabManager), nameof(Patch_ZNetSceneAwake))));
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(InventoryGui), nameof(InventoryGui.UpdateRecipe)), transpiler: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(Item), nameof(Item.Transpile_InventoryGui))));
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(Recipe), nameof(Recipe.GetRequiredStationLevel)), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(Item), nameof(Item.Patch_MaximumRequiredStationLevel))));
+		harmony.Patch(AccessTools.DeclaredMethod(typeof(Localization), nameof(Localization.LoadCSV)), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(LocalizeKey), nameof(LocalizeKey.AddLocalizedKeys))));
 	}
 
 	private struct BundleId
@@ -667,6 +747,20 @@ public static class PrefabManager
 			{
 				__instance.m_items.Add(prefab);
 			}
+
+			void RegisterStatusEffect(StatusEffect? statusEffect)
+			{
+				if (statusEffect is not null && !__instance.GetStatusEffect(statusEffect.name))
+				{
+					__instance.m_StatusEffects.Add(statusEffect);
+				}
+			}
+
+			ItemDrop.ItemData.SharedData shared = prefab.GetComponent<ItemDrop>().m_itemData.m_shared;
+			RegisterStatusEffect(shared.m_attackStatusEffect);
+			RegisterStatusEffect(shared.m_consumeStatusEffect);
+			RegisterStatusEffect(shared.m_equipStatusEffect);
+			RegisterStatusEffect(shared.m_setStatusEffect);
 		}
 
 		__instance.UpdateItemHashes();
