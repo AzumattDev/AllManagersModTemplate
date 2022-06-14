@@ -1,6 +1,9 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
@@ -39,6 +42,14 @@ public struct Requirement
     public bool recover;
 }
 
+public struct SpecialProperties
+{
+    [Description("Admins should be the only ones that can build this piece.")]
+    public bool AdminOnly;
+    [Description("Turns off generating a config for this build piece.")]
+    public bool NoConfig;
+}
+
 [PublicAPI]
 public class BuildingPieceCategoryList
 {
@@ -68,9 +79,10 @@ public class BuildPiece
         public ConfigEntry<string> customCategory = null!;
     }
 
-    private static readonly List<BuildPiece> registeredPieces = new();
+    internal static readonly List<BuildPiece> registeredPieces = new();
     private static Dictionary<BuildPiece, PieceConfig> pieceConfigs = new();
 
+    [Description("Disables generation of the configs for your pieces. This is global, this turns it off for all pieces in your mod.")]
     public static bool ConfigurationEnabled = true;
 
     public readonly GameObject Prefab;
@@ -80,6 +92,9 @@ public class BuildPiece
 
     [Description("Sets the category for the building piece.")]
     public readonly BuildingPieceCategoryList Category = new();
+    
+    [Description("Change the extended/special properties of your build piece.")]
+    public SpecialProperties SpecialProperties;
 
     private LocalizeKey? _name;
 
@@ -179,6 +194,7 @@ public class BuildPiece
             plugin.Config.SaveOnConfigSet = false;
             foreach (BuildPiece piece in registeredPieces)
             {
+                if (piece.SpecialProperties.NoConfig) continue;
                 PieceConfig cfg = pieceConfigs[piece] = new PieceConfig();
                 Piece piecePrefab = piece.Prefab.GetComponent<Piece>();
                 string pieceName = piecePrefab.m_name;
@@ -186,10 +202,20 @@ public class BuildPiece
                 string localizedName = Localization.instance.Localize(pieceName).Trim();
 
                 int order = 0;
-                
-                cfg.category = config(englishName, "Build Table Category", piece.Category.BuildPieceCategories.First().Category, new ConfigDescription($"Build Category where {englishName} is available.", null, new ConfigurationManagerAttributes { Order = --order, Category = localizedName }));
-                ConfigurationManagerAttributes customTableAttributes = new() { Order = --order, Browsable = cfg.category.Value == BuildPieceCategory.Custom, Category = localizedName };
-                cfg.customCategory = config(englishName, "Custom Build Category", piece.Category.BuildPieceCategories.First().custom ?? "", new ConfigDescription("", null, customTableAttributes));
+
+                cfg.category = config(englishName, "Build Table Category",
+                    piece.Category.BuildPieceCategories.First().Category,
+                    new ConfigDescription($"Build Category where {englishName} is available.", null,
+                        new ConfigurationManagerAttributes { Order = --order, Category = localizedName }));
+                ConfigurationManagerAttributes customTableAttributes = new()
+                {
+                    Order = --order, Browsable = cfg.category.Value == BuildPieceCategory.Custom,
+                    Category = localizedName
+                };
+                cfg.customCategory = config(englishName, "Custom Build Category",
+                    piece.Category.BuildPieceCategories.First().custom ?? "",
+                    new ConfigDescription("", null, customTableAttributes));
+
                 void BuildTableConfigChanged(object o, EventArgs e)
                 {
                     if (registeredPieces.Count > 0)
@@ -204,10 +230,11 @@ public class BuildPiece
                             piecePrefab.m_category = (Piece.PieceCategory)cfg.category.Value;
                         }
                     }
+
                     customTableAttributes.Browsable = cfg.category.Value == BuildPieceCategory.Custom;
                     ReloadConfigDisplay();
                 }
-                
+
                 cfg.category.SettingChanged += BuildTableConfigChanged;
                 cfg.customCategory.SettingChanged += BuildTableConfigChanged;
 
@@ -218,7 +245,8 @@ public class BuildPiece
 
                 ConfigEntry<string> itemConfig(string name, string value, string desc)
                 {
-                    ConfigurationManagerAttributes attributes = new() { CustomDrawer = DrawConfigTable, Order = --order, Category = localizedName };
+                    ConfigurationManagerAttributes attributes = new()
+                        { CustomDrawer = DrawConfigTable, Order = --order, Category = localizedName };
                     return config(englishName, name, value, new ConfigDescription(desc, null, attributes));
                 }
 
@@ -394,9 +422,9 @@ public class BuildPiece
         }
     }
 
-    private static BaseUnityPlugin? _plugin;
+    internal static BaseUnityPlugin? _plugin;
 
-    private static BaseUnityPlugin plugin
+    internal static BaseUnityPlugin plugin
     {
         get
         {
@@ -543,6 +571,194 @@ public class LocalizeKey
     }
 }
 
+
+public class AdminSyncing
+{
+    private static bool isServer;
+    [HarmonyPriority(Priority.VeryHigh)]
+    internal static void AdminStatusSync(ZNet __instance)
+    {
+        isServer = __instance.IsServer();
+        ZRoutedRpc.instance.Register<ZPackage>(BuildPiece._plugin.Info.Metadata.Name + " PMAdminStatusSync", RPC_AdminPieceAddRemove);
+
+        IEnumerator WatchAdminListChanges()
+        {
+            List<string> CurrentList = new(ZNet.instance.m_adminList.GetList());
+            for (;;)
+            {
+                yield return new WaitForSeconds(30);
+                if (!ZNet.instance.m_adminList.GetList().SequenceEqual(CurrentList))
+                {
+                    CurrentList = new List<string>(ZNet.instance.m_adminList.GetList());
+                    List<ZNetPeer> adminPeer = ZNet.instance.GetPeers().Where(p =>
+                        ZNet.instance.m_adminList.Contains(p.m_rpc.GetSocket().GetHostName())).ToList();
+                    List<ZNetPeer> nonAdminPeer = ZNet.instance.GetPeers().Except(adminPeer).ToList();
+                    SendAdmin(nonAdminPeer, false);
+                    SendAdmin(adminPeer, true);
+
+                    void SendAdmin(List<ZNetPeer> peers, bool isAdmin)
+                    {
+                        ZPackage package = new();
+                        package.Write(isAdmin);
+                        ZNet.instance.StartCoroutine(sendZPackage(peers, package));
+                    }
+                }
+            }
+            // ReSharper disable once IteratorNeverReturns
+        }
+
+        if (isServer)
+        {
+            ZNet.instance.StartCoroutine(WatchAdminListChanges());
+        }
+    }
+
+    private static IEnumerator sendZPackage(List<ZNetPeer> peers, ZPackage package)
+    {
+        if (!ZNet.instance)
+        {
+            yield break;
+        }
+        const int compressMinSize = 10000;
+
+        if (package.GetArray() is { LongLength: > compressMinSize } rawData)
+        {
+            ZPackage compressedPackage = new();
+            compressedPackage.Write(4);
+            MemoryStream output = new();
+            using (DeflateStream deflateStream = new(output, System.IO.Compression.CompressionLevel.Optimal))
+            {
+                deflateStream.Write(rawData, 0, rawData.Length);
+            }
+            compressedPackage.Write(output.ToArray());
+            package = compressedPackage;
+        }
+        List<IEnumerator<bool>> writers = peers.Where(peer => peer.IsReady()).Select(p => TellPeerAdminStatus(p, package)).ToList();
+        writers.RemoveAll(writer => !writer.MoveNext());
+        while (writers.Count > 0)
+        {
+            yield return null;
+            writers.RemoveAll(writer => !writer.MoveNext());
+        }
+    }
+    
+    private static IEnumerator<bool> TellPeerAdminStatus(ZNetPeer peer, ZPackage package)
+    {
+        if (ZRoutedRpc.instance is not { } rpc)
+        {
+            yield break;
+        }
+        
+        SendPackage(package);
+
+        void SendPackage(ZPackage pkg)
+        {
+            string method = BuildPiece._plugin.Info.Metadata.Name + " PMAdminStatusSync";
+            if (isServer)
+            {
+                peer.m_rpc.Invoke(method, pkg);
+            }
+            else
+            {
+                rpc.InvokeRoutedRPC(peer.m_server ? 0 : peer.m_uid, method, pkg);
+            }
+        }
+    }
+
+    internal static void RPC_AdminPieceAddRemove(long sender, ZPackage package)
+    {
+        ZNetPeer? currentPeer = ZNet.instance.GetPeer(sender);
+        bool admin = false;
+        try
+        {
+            admin = package.ReadBool();
+        }
+        catch
+        {
+            // ignore
+        }
+
+        if (isServer)
+        {
+            ZRoutedRpc.instance.InvokeRoutedRPC(ZRoutedRpc.Everybody,
+                BuildPiece._plugin.Info.Metadata.Name + " PMAdminStatusSync", new ZPackage());
+            if (ZNet.instance.m_adminList.Contains(currentPeer.m_rpc.GetSocket().GetHostName()))
+            {
+                ZPackage pkg = new();
+                pkg.Write(true);
+                currentPeer.m_rpc.Invoke(BuildPiece._plugin.Info.Metadata.Name + " PMAdminStatusSync", pkg);
+            }
+        }
+        else
+        {
+            // Remove everything they shouldn't be able to build by disabling and removing.
+            foreach (BuildPiece piece in BuildPiece.registeredPieces)
+            {
+                if (!piece.SpecialProperties.AdminOnly) continue;
+                Piece piecePrefab = piece.Prefab.GetComponent<Piece>();
+                string pieceName = piecePrefab.m_name;
+                string localizedName = Localization.instance.Localize(pieceName).Trim();
+                if (!ObjectDB.instance || ObjectDB.instance.GetItemPrefab("Wood") == null) continue;
+                foreach (Piece instantiatedPiece in UnityEngine.Object.FindObjectsOfType<Piece>())
+                {
+                    if (admin)
+                    {
+                        if (instantiatedPiece.m_name == pieceName)
+                        {
+                            instantiatedPiece.m_enabled = true;
+                        }
+                    }
+                    else
+                    {
+                        if (instantiatedPiece.m_name == pieceName)
+                        {
+                            instantiatedPiece.m_enabled = false;
+                        }
+                    }
+                }
+
+                List<GameObject>? hammerPieces = ObjectDB.instance.GetItemPrefab("Hammer").GetComponent<ItemDrop>()
+                    .m_itemData.m_shared.m_buildPieces
+                    .m_pieces;
+                if (admin)
+                {
+                    if (!hammerPieces.Contains(ZNetScene.instance.GetPrefab(piecePrefab.name)))
+                        hammerPieces.Add(ZNetScene.instance.GetPrefab(piecePrefab.name));
+                }
+                else
+                {
+                    if (hammerPieces.Contains(ZNetScene.instance.GetPrefab(piecePrefab.name)))
+                        hammerPieces.Remove(ZNetScene.instance.GetPrefab(piecePrefab.name));
+                }
+            }
+        }
+    }
+
+}
+
+[HarmonyPatch(typeof(ZNet), nameof(ZNet.OnNewConnection))]
+class RegisterClientRPCPatch
+{
+    private static void Postfix(ZNet __instance, ZNetPeer peer)
+    {
+        if (!__instance.IsServer())
+        {
+            peer.m_rpc.Register<ZPackage>(BuildPiece._plugin.Info.Metadata.Name + " PMAdminStatusSync",
+                RPC_InitialAdminSync);
+        }
+        else
+        {
+            ZPackage packge = new();
+            packge.Write(__instance.m_adminList.Contains(peer.m_rpc.GetSocket().GetHostName()));
+
+            peer.m_rpc.Invoke(BuildPiece._plugin.Info.Metadata.Name + " PMAdminStatusSync", packge);
+        }
+    }
+
+    private static void RPC_InitialAdminSync(ZRpc rpc, ZPackage package) =>
+        AdminSyncing.RPC_AdminPieceAddRemove(0, package);
+}
+
 public static class PiecePrefabManager
 {
     static PiecePrefabManager()
@@ -554,6 +770,9 @@ public static class PiecePrefabManager
         harmony.Patch(AccessTools.DeclaredMethod(typeof(ZNetScene), nameof(ZNetScene.Awake)),
             new HarmonyMethod(AccessTools.DeclaredMethod(typeof(PiecePrefabManager),
                 nameof(Patch_ZNetSceneAwake))));
+        harmony.Patch(AccessTools.DeclaredMethod(typeof(ZNet), nameof(ZNet.Awake)),
+            postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(AdminSyncing),
+                nameof(AdminSyncing.AdminStatusSync))));
         harmony.Patch(AccessTools.DeclaredMethod(typeof(ObjectDB), nameof(ObjectDB.Awake)),
             postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(PiecePrefabManager),
                 nameof(Patch_ObjectDBInit))));
@@ -636,7 +855,8 @@ public static class PiecePrefabManager
     {
         foreach (GameObject prefab in piecePrefabs.Concat(ZnetOnlyPrefabs).Concat(customPiecePrefabs.Keys))
         {
-            __instance.m_prefabs.Add(prefab);
+            if(!__instance.m_prefabs.Contains(prefab))
+                __instance.m_prefabs.Add(prefab);
         }
     }
 
