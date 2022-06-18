@@ -16,6 +16,40 @@ using UnityEngine;
 namespace PieceManager;
 
 [PublicAPI]
+public enum CraftingTable
+{
+    None,
+    [InternalName("piece_workbench")] Workbench,
+    [InternalName("piece_cauldron")] Cauldron,
+    [InternalName("forge")] Forge,
+    [InternalName("piece_artisanstation")] ArtisanTable,
+    [InternalName("piece_stonecutter")] StoneCutter,
+    Custom
+}
+
+public class InternalName : Attribute
+{
+    public readonly string internalName;
+    public InternalName(string internalName) => this.internalName = internalName;
+}
+
+[PublicAPI]
+public class CraftingStationList
+{
+    public readonly List<CraftingStationConfig> Stations = new();
+
+    public void Set(CraftingTable table) => Stations.Add(new CraftingStationConfig { Table = table });
+    public void Set(string customTable) => Stations.Add(new CraftingStationConfig { Table = CraftingTable.Custom, custom = customTable });
+}
+
+public struct CraftingStationConfig
+{
+    public CraftingTable Table;
+    public int level;
+    public string? custom;
+}
+
+[PublicAPI]
 public enum BuildPieceCategory
 {
     Misc = 0,
@@ -77,6 +111,8 @@ public class BuildPiece
         public ConfigEntry<string> craft = null!;
         public ConfigEntry<BuildPieceCategory> category = null!;
         public ConfigEntry<string> customCategory = null!;
+        public ConfigEntry<CraftingTable> table = null!;
+        public ConfigEntry<string> customTable = null!;
     }
 
     internal static readonly List<BuildPiece> registeredPieces = new();
@@ -92,6 +128,10 @@ public class BuildPiece
 
     [Description("Sets the category for the building piece.")]
     public readonly BuildingPieceCategoryList Category = new();
+
+    [Description(
+        "Specifies the crafting station needed to build your piece.\nUse .Add to add a crafting station, using the CraftingTable enum and a minimum level for the crafting station.")]
+    public CraftingStationList Crafting = new();
     
     [Description("Change the extended/special properties of your build piece.")]
     public SpecialProperties SpecialProperties;
@@ -242,6 +282,45 @@ public class BuildPiece
                 {
                     piecePrefab.m_category = (Piece.PieceCategory)cfg.category.Value;
                 }
+                
+                if (piece.Crafting.Stations.Count > 0)
+				{
+
+					List<ConfigurationManagerAttributes> hideWhenNoneAttributes = new();
+
+					cfg.table = config(localizedName, "Crafting Station", piece.Crafting.Stations.First().Table, new ConfigDescription($"Crafting station where {localizedName} is available.", null, new ConfigurationManagerAttributes { Order = --order }));
+                    cfg.customTable = config(localizedName, "Custom Crafting Station", piece.Crafting.Stations.First().custom ?? "", new ConfigDescription("", null, customTableAttributes));
+
+					void TableConfigChanged(object o, EventArgs e)
+					{
+						if (piece.RequiredItems.Requirements.Count > 0)
+                        {
+                            switch (cfg.table.Value)
+                            {
+                                case CraftingTable.None:
+                                    piecePrefab.m_craftingStation = null;
+                                    break;
+                                case CraftingTable.Custom:
+                                    piecePrefab.m_craftingStation = ZNetScene.instance.GetPrefab(cfg.customTable.Value)?.GetComponent<CraftingStation>();
+                                    break;
+                                default:
+                                    piecePrefab.m_craftingStation = ZNetScene.instance.GetPrefab(((InternalName)typeof(CraftingTable).GetMember(cfg.table.Value.ToString())[0].GetCustomAttributes(typeof(InternalName)).First()).internalName).GetComponent<CraftingStation>();
+                                    break;
+                            }
+                        }
+						customTableAttributes.Browsable = cfg.table.Value == CraftingTable.Custom;
+						foreach (ConfigurationManagerAttributes attributes in hideWhenNoneAttributes)
+						{
+							attributes.Browsable = cfg.table.Value != CraftingTable.None;
+						}
+                        ReloadConfigDisplay();
+					}
+					cfg.table.SettingChanged += TableConfigChanged;
+					cfg.customTable.SettingChanged += TableConfigChanged;
+
+					ConfigurationManagerAttributes tableLevelAttributes = new() { Order = --order, Browsable = cfg.table.Value != CraftingTable.None };
+					hideWhenNoneAttributes.Add(tableLevelAttributes);
+				}
 
                 ConfigEntry<string> itemConfig(string name, string value, string desc)
                 {
@@ -292,6 +371,30 @@ public class BuildPiece
             piece.Prefab.GetComponent<Piece>().m_resources = SerializedRequirements.toPieceReqs(cfg == null
                 ? new SerializedRequirements(piece.RequiredItems.Requirements)
                 : new SerializedRequirements(cfg.craft.Value));
+            foreach (CraftingStationConfig station in piece.Crafting.Stations)
+            {
+               
+                if ((cfg == null || piece.Crafting.Stations.Count > 0 ? station.Table : cfg.table.Value) is CraftingTable.None)
+                {
+                    piece.Prefab.GetComponent<Piece>().m_craftingStation = null;
+                }
+                else if ((cfg == null || piece.Crafting.Stations.Count > 0 ? station.Table : cfg.table.Value) is CraftingTable.Custom)
+                {
+                    if (ZNetScene.instance.GetPrefab(cfg == null || piece.Crafting.Stations.Count > 0 ? station.custom : cfg.customTable.Value) is { } craftingTable)
+                    {
+                        piece.Prefab.GetComponent<Piece>().m_craftingStation = craftingTable.GetComponent<CraftingStation>();
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"Custom crafting station '{(cfg == null || piece.Crafting.Stations.Count > 0 ? station.custom : cfg.customTable.Value)}' does not exist");
+                    }
+                }
+                else
+                {
+                    piece.Prefab.GetComponent<Piece>().m_craftingStation = ZNetScene.instance.GetPrefab(((InternalName)typeof(CraftingTable).GetMember((cfg == null || piece.Crafting.Stations.Count > 0 ? station.Table : cfg.table.Value).ToString())[0].GetCustomAttributes(typeof(InternalName)).First()).internalName).GetComponent<CraftingStation>();
+                }
+            }
+
         }
     }
 
@@ -422,7 +525,7 @@ public class BuildPiece
         }
     }
 
-    internal static BaseUnityPlugin? _plugin;
+    internal static BaseUnityPlugin? _plugin = null!;
 
     internal static BaseUnityPlugin plugin
     {
@@ -579,7 +682,7 @@ public class AdminSyncing
     internal static void AdminStatusSync(ZNet __instance)
     {
         isServer = __instance.IsServer();
-        ZRoutedRpc.instance.Register<ZPackage>(BuildPiece._plugin.Info.Metadata.Name + " PMAdminStatusSync", RPC_AdminPieceAddRemove);
+        ZRoutedRpc.instance.Register<ZPackage>(BuildPiece._plugin?.Info.Metadata.Name + " PMAdminStatusSync", RPC_AdminPieceAddRemove);
 
         IEnumerator WatchAdminListChanges()
         {
@@ -653,7 +756,7 @@ public class AdminSyncing
 
         void SendPackage(ZPackage pkg)
         {
-            string method = BuildPiece._plugin.Info.Metadata.Name + " PMAdminStatusSync";
+            string method = BuildPiece._plugin?.Info.Metadata.Name + " PMAdminStatusSync";
             if (isServer)
             {
                 peer.m_rpc.Invoke(method, pkg);
@@ -681,12 +784,12 @@ public class AdminSyncing
         if (isServer)
         {
             ZRoutedRpc.instance.InvokeRoutedRPC(ZRoutedRpc.Everybody,
-                BuildPiece._plugin.Info.Metadata.Name + " PMAdminStatusSync", new ZPackage());
+                BuildPiece._plugin?.Info.Metadata.Name + " PMAdminStatusSync", new ZPackage());
             if (ZNet.instance.m_adminList.Contains(currentPeer.m_rpc.GetSocket().GetHostName()))
             {
                 ZPackage pkg = new();
                 pkg.Write(true);
-                currentPeer.m_rpc.Invoke(BuildPiece._plugin.Info.Metadata.Name + " PMAdminStatusSync", pkg);
+                currentPeer.m_rpc.Invoke(BuildPiece._plugin?.Info.Metadata.Name + " PMAdminStatusSync", pkg);
             }
         }
         else
@@ -743,7 +846,7 @@ class RegisterClientRPCPatch
     {
         if (!__instance.IsServer())
         {
-            peer.m_rpc.Register<ZPackage>(BuildPiece._plugin.Info.Metadata.Name + " PMAdminStatusSync",
+            peer.m_rpc.Register<ZPackage>(BuildPiece._plugin?.Info.Metadata.Name + " PMAdminStatusSync",
                 RPC_InitialAdminSync);
         }
         else
@@ -751,7 +854,7 @@ class RegisterClientRPCPatch
             ZPackage packge = new();
             packge.Write(__instance.m_adminList.Contains(peer.m_rpc.GetSocket().GetHostName()));
 
-            peer.m_rpc.Invoke(BuildPiece._plugin.Info.Metadata.Name + " PMAdminStatusSync", packge);
+            peer.m_rpc.Invoke(BuildPiece._plugin?.Info.Metadata.Name + " PMAdminStatusSync", packge);
         }
     }
 
