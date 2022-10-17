@@ -60,6 +60,7 @@ namespace AllManagersModTemplate
             examplePiece1.RequiredItems.Add("SurtlingCore", 20, false);
             examplePiece1.Category.Add(BuildPieceCategory.Misc);
             examplePiece1.Crafting.Set(PieceManager.CraftingTable.ArtisanTable); // Set a crafting station requirement for the piece.
+            examplePiece1.Extension.Set(PieceManager.CraftingTable.Forge, 2); // Makes this piece a station extension, can change the max station distance by changing the second value. Use strings for custom tables.
             //examplePiece1.Crafting.Set("CUSTOMTABLE"); // If you have a custom table you're adding to the game. Just set it like this.
             //examplePiece1.SpecialProperties.NoConfig = true;  // Do not generate a config for this piece, omit this line of code if you want to generate a config.
             examplePiece1.SpecialProperties = new SpecialProperties() { AdminOnly = true, NoConfig = true}; // You can declare multiple properties in one line           
@@ -87,7 +88,14 @@ namespace AllManagersModTemplate
             
             // Does your model need to swap materials with a vanilla material? Format: (GameObject, isJotunnMock)
             MaterialReplacer.RegisterGameObjectForMatSwap(examplePiece3.Prefab, false);
+            
+            // Does your model use a shader from the game like Custom/Creature or Custom/Piece in unity? Need it to "just work"?
+            MaterialReplacer.RegisterGameObjectForShaderSwap(examplePiece3.Prefab, MaterialReplacer.ShaderType.UseUnityShader);
+            
+            // What if you want to use a custom shader from the game (like Custom/Piece that allows snow!!!) but your unity shader isn't set to Custom/Piece? Format: (GameObject, MaterialReplacer.ShaderType.)
+            //MaterialReplacer.RegisterGameObjectForShaderSwap(examplePiece3.Prefab, MaterialReplacer.ShaderType.PieceShader);
 
+            // Detailed instructions on how to use the MaterialReplacer can be found on the current PieceManager Wiki. https://github.com/AzumattDev/PieceManager/wiki
             #endregion
 
             #region SkillManager Example Code
@@ -216,12 +224,34 @@ namespace AllManagersModTemplate
 
 
             // If you have something that shouldn't go into the ObjectDB, like vfx or sfx that only need to be added to ZNetScene
-            GameObject axeVisual =
-                ItemManager.PrefabManager.RegisterPrefab(PrefabManager.RegisterAssetBundle("ironfang"), "axeVisual",
+            ItemManager.PrefabManager.RegisterPrefab(PrefabManager.RegisterAssetBundle("ironfang"), "axeVisual",
                     false); // If our axe has a special visual effect, like a glow, we can skip adding it to the ObjectDB this way
-            GameObject axeSound =
-                ItemManager.PrefabManager.RegisterPrefab(PrefabManager.RegisterAssetBundle("ironfang"), "axeSound",
+            ItemManager.PrefabManager.RegisterPrefab(PrefabManager.RegisterAssetBundle("ironfang"), "axeSound",
                     false); // Same for special sound effects
+            
+            Item heroBlade = new("heroset", "HeroBlade");
+            heroBlade.Crafting.Add(ItemManager.CraftingTable.Workbench, 2);
+            heroBlade.RequiredItems.Add("Wood", 5);
+            heroBlade.RequiredItems.Add("DeerHide", 2);
+            heroBlade.RequiredUpgradeItems.Add("Wood", 2);
+            heroBlade.RequiredUpgradeItems.Add("Flint", 2); // You can even add new items for the upgrade
+			
+            Item heroShield = new("heroset", "HeroShield");
+            heroShield["My first recipe"].Crafting.Add(ItemManager.CraftingTable.Workbench, 1); // You can add multiple recipes for the same item, by giving the recipe a name
+            heroShield["My first recipe"].RequiredItems.Add("Wood", 10);
+            heroShield["My first recipe"].RequiredItems.Add("Flint", 5);
+            heroShield["My first recipe"].RequiredUpgradeItems.Add("Wood", 5);
+            heroShield["My alternate recipe"].Crafting.Add(ItemManager.CraftingTable.Workbench, 1); // And this is our second recipe then
+            heroShield["My alternate recipe"].RequiredItems.Add("Bronze", 2);
+            heroShield["My alternate recipe"].RequiredUpgradeItems.Add("Bronze", 1);
+            heroShield.Snapshot(); // I don't have an icon for this item in my asset bundle, so I will let the ItemManager generate one automatically
+            // The icon for the item will have the same rotation as the item in unity
+			
+            _ = new Conversion(heroBlade) // For some reason, we want to be able to put a hero shield into a smelter, to get a hero blade
+            {
+                Input = "HeroShield",
+                Piece = ConversionPiece.Smelter
+            };
 
             #endregion
 

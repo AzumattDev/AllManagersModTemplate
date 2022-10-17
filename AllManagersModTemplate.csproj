@@ -93,6 +93,9 @@
         <Reference Include="UnityEngine.InputLegacyModule">
           <HintPath>$(GamePath)\unstripped_corlib\UnityEngine.InputLegacyModule.dll</HintPath>
         </Reference>
+        <Reference Include="UnityEngine.ParticleSystemModule">
+          <HintPath>$(GamePath)\unstripped_corlib\UnityEngine.ParticleSystemModule.dll</HintPath>
+        </Reference>
         <Reference Include="UnityEngine.PhysicsModule">
             <HintPath>$(GamePath)\unstripped_corlib\UnityEngine.PhysicsModule.dll</HintPath>
         </Reference>
