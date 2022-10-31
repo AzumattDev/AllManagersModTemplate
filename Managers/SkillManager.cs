@@ -78,6 +78,37 @@ public class Skill
 
 	public static Skills.SkillType fromName(string englishName) => (Skills.SkillType)Math.Abs(englishName.GetStableHashCode());
 
+	public static class LocalizationCache
+	{
+		private static readonly Dictionary<string, Localization> localizations = new();
+
+		internal static void LocalizationPostfix(Localization __instance, string language)
+		{
+			if (localizations.FirstOrDefault(l => l.Value == __instance).Key is { } oldValue)
+			{
+				localizations.Remove(oldValue);
+			}
+			if (!localizations.ContainsKey(language))
+			{
+				localizations.Add(language, __instance);
+			}
+		}
+
+		public static Localization ForLanguage(string? language = null)
+		{
+			if (localizations.TryGetValue(language ?? PlayerPrefs.GetString("language", "English"), out Localization localization))
+			{
+				return localization;
+			}
+			localization = new Localization();
+			if (language is not null)
+			{
+				localization.SetupLanguage(language);
+			}
+			return localization;
+		}
+	}
+
 	[PublicAPI]
 	public class LocalizeKey
 	{
@@ -174,6 +205,7 @@ public class Skill
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(Skills), nameof(Skills.CheatResetSkill)), new HarmonyMethod(AccessTools.DeclaredMethod(typeof(Skill), nameof(Patch_Skills_CheatResetSkill))));
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(Localization), nameof(Localization.LoadCSV)), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(LocalizeKey), nameof(LocalizeKey.AddLocalizedKeys))));
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(Terminal), nameof(Terminal.InitTerminal)), new HarmonyMethod(AccessTools.DeclaredMethod(typeof(Skill), nameof(Patch_Terminal_InitTerminal_Prefix))), new HarmonyMethod(AccessTools.DeclaredMethod(typeof(Skill), nameof(Patch_Terminal_InitTerminal))));
+		harmony.Patch(AccessTools.DeclaredMethod(typeof(Localization), nameof(Localization.SetupLanguage)), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(LocalizationCache), nameof(LocalizationCache.LocalizationPostfix))));
 	}
 
 	private class ConfigurationManagerAttributes
@@ -318,19 +350,7 @@ public class Skill
 
 	private static Localization? _english;
 
-	private static Localization english
-	{
-		get
-		{
-			if (_english == null)
-			{
-				_english = new Localization();
-				_english.SetupLanguage("English");
-			}
-
-			return _english;
-		}
-	}
+	private static Localization english => _english ??= LocalizationCache.ForLanguage("English");
 
 	private static BaseUnityPlugin? _plugin;
 	private static BaseUnityPlugin plugin => _plugin ??= (BaseUnityPlugin)BepInEx.Bootstrap.Chainloader.ManagerObject.GetComponent(Assembly.GetExecutingAssembly().DefinedTypes.First(t => t.IsClass && typeof(BaseUnityPlugin).IsAssignableFrom(t)));

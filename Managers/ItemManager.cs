@@ -240,9 +240,23 @@ public class Item
 		[UsedImplicitly] public Action<ConfigEntryBase>? CustomDrawer;
 	}
 
+	[PublicAPI]
+	public enum DamageModifier
+	{
+		Normal,
+		Resistant,
+		Weak,
+		Immune,
+		Ignore,
+		VeryResistant,
+		VeryWeak,
+		None
+	}
+
 	private static object? configManager;
 
 	private delegate void setDmgFunc(ref HitData.DamageTypes dmg, float value);
+
 	internal static void Patch_FejdStartup()
 	{
 		Assembly? bepinexConfigManager = AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a => a.GetName().Name == "ConfigurationManager");
@@ -430,31 +444,63 @@ public class Item
 
 					ItemDrop.ItemData.SharedData shared = item.Prefab.GetComponent<ItemDrop>().m_itemData.m_shared;
 					ItemDrop.ItemData.ItemType itemType = shared.m_itemType;
-					
+
 					statcfg("Weight", $"Weight of {englishName}.", shared => shared.m_weight, (shared, value) => shared.m_weight = value);
 					statcfg("Trader Value", $"Trader value of {englishName}.", shared => shared.m_value, (shared, value) => shared.m_value = value);
-					statcfg("Durability", $"Durability of {englishName}.", shared => shared.m_maxDurability, (shared, value) => shared.m_maxDurability = value);
-					statcfg("Durability per Level", $"Durability gain per level of {englishName}.", shared => shared.m_durabilityPerLevel, (shared, value) => shared.m_durabilityPerLevel = value);
-					statcfg("Block Armor", $"Block armor of {englishName}.", shared => shared.m_blockPower, (shared, value) => shared.m_blockPower = value);
-					statcfg("Block Armor per Level", $"Block armor per level for {englishName}.", shared => shared.m_blockPowerPerLevel, (shared, value) => shared.m_blockPowerPerLevel = value);
-					statcfg("Block Force", $"Block force of {englishName}.", shared => shared.m_deflectionForce, (shared, value) => shared.m_deflectionForce = value);
-					statcfg("Block Force per Level", $"Block force per level for {englishName}.", shared => shared.m_deflectionForcePerLevel, (shared, value) => shared.m_deflectionForcePerLevel = value);
-					statcfg("Parry Bonus", $"Parry bonus of {englishName}.", shared => shared.m_timedBlockBonus, (shared, value) => shared.m_timedBlockBonus = value);
-					statcfg("Movement Speed Modifier", $"Movement speed modifier of {englishName}.", shared => shared.m_movementModifier, (shared, value) => shared.m_movementModifier = value);
 
-					if (itemType is ItemDrop.ItemData.ItemType.Shield)
+					if (itemType is ItemDrop.ItemData.ItemType.Bow or ItemDrop.ItemData.ItemType.Chest or ItemDrop.ItemData.ItemType.Hands or ItemDrop.ItemData.ItemType.Helmet or ItemDrop.ItemData.ItemType.Legs or ItemDrop.ItemData.ItemType.Shield or ItemDrop.ItemData.ItemType.Shoulder or ItemDrop.ItemData.ItemType.Tool or ItemDrop.ItemData.ItemType.OneHandedWeapon or ItemDrop.ItemData.ItemType.TwoHandedWeapon)
 					{
-						Dictionary<HitData.DamageType, HitData.DamageModifier> modifiers = shared.m_damageModifiers.ToDictionary(d => d.m_type, d => d.m_modifier);
-						shared.m_damageModifiers.Clear();
-						int i = 0;
-						foreach (HitData.DamageType damageType in (HitData.DamageType[])Enum.GetValues(typeof(HitData.DamageType)))
+						statcfg("Durability", $"Durability of {englishName}.", shared => shared.m_maxDurability, (shared, value) => shared.m_maxDurability = value);
+						statcfg("Durability per Level", $"Durability gain per level of {englishName}.", shared => shared.m_durabilityPerLevel, (shared, value) => shared.m_durabilityPerLevel = value);
+						statcfg("Movement Speed Modifier", $"Movement speed modifier of {englishName}.", shared => shared.m_movementModifier, (shared, value) => shared.m_movementModifier = value);
+					}
+
+					if (itemType is ItemDrop.ItemData.ItemType.Bow or ItemDrop.ItemData.ItemType.Shield or ItemDrop.ItemData.ItemType.OneHandedWeapon or ItemDrop.ItemData.ItemType.TwoHandedWeapon)
+					{
+						statcfg("Tool Tier", $"Tool Tier of {englishName}. Dictates if the object can cut down hard trees.", shared => shared.m_toolTier, (shared, value) => shared.m_toolTier = value);
+						statcfg("Block Armor", $"Block armor of {englishName}.", shared => shared.m_blockPower, (shared, value) => shared.m_blockPower = value);
+						statcfg("Block Armor per Level", $"Block armor per level for {englishName}.", shared => shared.m_blockPowerPerLevel, (shared, value) => shared.m_blockPowerPerLevel = value);
+						statcfg("Block Force", $"Block force of {englishName}.", shared => shared.m_deflectionForce, (shared, value) => shared.m_deflectionForce = value);
+						statcfg("Block Force per Level", $"Block force per level for {englishName}.", shared => shared.m_deflectionForcePerLevel, (shared, value) => shared.m_deflectionForcePerLevel = value);
+						statcfg("Parry Bonus", $"Parry bonus of {englishName}.", shared => shared.m_timedBlockBonus, (shared, value) => shared.m_timedBlockBonus = value);
+					}
+					else if (itemType is ItemDrop.ItemData.ItemType.Chest or ItemDrop.ItemData.ItemType.Hands or ItemDrop.ItemData.ItemType.Helmet or ItemDrop.ItemData.ItemType.Legs or ItemDrop.ItemData.ItemType.Shoulder)
+					{
+						statcfg("Armor", $"Armor of {englishName}.", shared => shared.m_armor, (shared, value) => shared.m_armor = value);
+						statcfg("Armor per Level", $"Armor per level for {englishName}.", shared => shared.m_armorPerLevel, (shared, value) => shared.m_armorPerLevel = value);
+					}
+
+					if (itemType is ItemDrop.ItemData.ItemType.Shield or ItemDrop.ItemData.ItemType.Chest or ItemDrop.ItemData.ItemType.Hands or ItemDrop.ItemData.ItemType.Helmet or ItemDrop.ItemData.ItemType.Legs or ItemDrop.ItemData.ItemType.Shoulder)
+					{
+						Dictionary<HitData.DamageType, DamageModifier> modifiers = shared.m_damageModifiers.ToDictionary(d => d.m_type, d => (DamageModifier)(int)d.m_modifier);
+						foreach (HitData.DamageType damageType in ((HitData.DamageType[])Enum.GetValues(typeof(HitData.DamageType))).Except(new[] { HitData.DamageType.Chop, HitData.DamageType.Pickaxe, HitData.DamageType.Spirit, HitData.DamageType.Physical, HitData.DamageType.Elemental }))
 						{
-							int index = i++;
-							shared.m_damageModifiers.Add(new HitData.DamageModPair());
-							statcfg($"{damageType.ToString()} Resistance", $"{damageType.ToString()} resistance of {englishName}.", _ => modifiers.TryGetValue(damageType, out HitData.DamageModifier modifier) ? modifier : HitData.DamageModifier.Normal, (shared, value) => shared.m_damageModifiers[index] = new HitData.DamageModPair { m_type = damageType, m_modifier = value });
+							statcfg($"{damageType.ToString()} Resistance", $"{damageType.ToString()} resistance of {englishName}.", _ => modifiers.TryGetValue(damageType, out DamageModifier modifier) ? modifier : DamageModifier.None, (shared, value) =>
+							{
+								HitData.DamageModPair modifier = new() { m_type = damageType, m_modifier = (HitData.DamageModifier)(int)value };
+								for (int i = 0; i < shared.m_damageModifiers.Count; ++i)
+								{
+									if (shared.m_damageModifiers[i].m_type == damageType)
+									{
+										if (value == DamageModifier.None)
+										{
+											shared.m_damageModifiers.RemoveAt(i);
+										}
+										else
+										{
+											shared.m_damageModifiers[i] = modifier;
+										}
+										return;
+									}
+								}
+								if (value != DamageModifier.None)
+								{
+									shared.m_damageModifiers.Add(modifier);
+								}
+							});
 						}
 					}
-					
+
 					if (itemType is ItemDrop.ItemData.ItemType.OneHandedWeapon or ItemDrop.ItemData.ItemType.TwoHandedWeapon or ItemDrop.ItemData.ItemType.Bow)
 					{
 						statcfg("Knockback", $"Knockback of {englishName}.", shared => shared.m_attackForce, (shared, value) => shared.m_attackForce = value);
@@ -661,8 +707,9 @@ public class Item
 			__result = Mathf.Min(Mathf.Max(1, __instance.m_minStationLevel) + (quality - 1), configs.Where(cfg => cfg.maximumTableLevel is not null).Select(cfg => cfg.maximumTableLevel!.Value).DefaultIfEmpty(item.MaximumRequiredStationLevel).Max());
 		}
 	}
-	
+
 	public void Snapshot(float lightIntensity = 1.3f, Quaternion? cameraRotation = null) => SnapshotItem(Prefab.GetComponent<ItemDrop>(), lightIntensity, cameraRotation);
+
 	public static void SnapshotItem(ItemDrop item, float lightIntensity = 1.3f, Quaternion? cameraRotation = null)
 	{
 		const int layer = 30;
@@ -680,7 +727,7 @@ public class Item
 		topLight.type = LightType.Directional;
 		topLight.cullingMask = 1 << layer;
 		topLight.intensity = lightIntensity;
-		
+
 		Rect rect = new(0, 0, 64, 64);
 
 		GameObject visual = UnityEngine.Object.Instantiate(item.transform.Find("attach").gameObject);
