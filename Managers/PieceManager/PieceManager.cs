@@ -265,7 +265,7 @@ public class BuildPiece
 
                 int order = 0;
 
-                cfg.category = config(localizedName, "Build Table Category",
+                cfg.category = config(englishName, "Build Table Category",
                     piece.Category.BuildPieceCategories.First().Category,
                     new ConfigDescription($"Build Category where {localizedName} is available.", null,
                         new ConfigurationManagerAttributes { Order = --order, Category = localizedName }));
@@ -274,7 +274,7 @@ public class BuildPiece
                     Order = --order, Browsable = cfg.category.Value == BuildPieceCategory.Custom,
                     Category = localizedName
                 };
-                cfg.customCategory = config(localizedName, "Custom Build Category",
+                cfg.customCategory = config(englishName, "Custom Build Category",
                     piece.Category.BuildPieceCategories.First().custom ?? "",
                     new ConfigDescription("", null, customTableAttributes));
 
@@ -308,14 +308,14 @@ public class BuildPiece
                 if (piece.Extension.ExtensionStations.Count > 0)
                 {
                     StationExtension pieceExtensionComp = piece.Prefab.GetOrAddComponent<StationExtension>();
-                    cfg.extensionTable = config(localizedName, "Extends Station",
+                    cfg.extensionTable = config(englishName, "Extends Station",
                         piece.Extension.ExtensionStations.First().Table,
                         new ConfigDescription($"Crafting station that {localizedName} extends.", null,
                             new ConfigurationManagerAttributes { Order = --order }));
-                    cfg.customExtentionTable = config(localizedName, "Custom Extend Station",
+                    cfg.customExtentionTable = config(englishName, "Custom Extend Station",
                         piece.Extension.ExtensionStations.First().custom ?? "",
                         new ConfigDescription("", null, customTableAttributes));
-                    cfg.maxStationDistance = config(localizedName, "Max Station Distance",
+                    cfg.maxStationDistance = config(englishName, "Max Station Distance",
                         piece.Extension.ExtensionStations.First().maxStationDistance,
                         new ConfigDescription($"Distance from the station that {localizedName} can be placed.", null,
                             new ConfigurationManagerAttributes { Order = --order }));
@@ -366,10 +366,10 @@ public class BuildPiece
                 {
                     List<ConfigurationManagerAttributes> hideWhenNoneAttributes = new();
 
-                    cfg.table = config(localizedName, "Crafting Station", piece.Crafting.Stations.First().Table,
+                    cfg.table = config(englishName, "Crafting Station", piece.Crafting.Stations.First().Table,
                         new ConfigDescription($"Crafting station where {localizedName} is available.", null,
                             new ConfigurationManagerAttributes { Order = --order }));
-                    cfg.customTable = config(localizedName, "Custom Crafting Station",
+                    cfg.customTable = config(englishName, "Custom Crafting Station",
                         piece.Crafting.Stations.First().custom ?? "",
                         new ConfigDescription("", null, customTableAttributes));
 
@@ -418,7 +418,7 @@ public class BuildPiece
                 {
                     ConfigurationManagerAttributes attributes = new()
                         { CustomDrawer = DrawConfigTable, Order = --order, Category = localizedName };
-                    return config(localizedName, name, value, new ConfigDescription(desc, null, attributes));
+                    return config(englishName, name, value, new ConfigDescription(desc, null, attributes));
                 }
 
                 cfg.craft = itemConfig("Crafting Costs",
