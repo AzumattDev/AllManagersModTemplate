@@ -1,4 +1,5 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
 using System.Reflection;
 using BepInEx;
 using BepInEx.Configuration;
@@ -6,6 +7,7 @@ using BepInEx.Logging;
 using CreatureManager;
 using HarmonyLib;
 using ItemManager;
+using JetBrains.Annotations;
 using LocationManager;
 using PieceManager;
 using ServerSync;
@@ -65,7 +67,7 @@ namespace AllManagersModTemplate
             examplePiece1.Description.English("Ward For testing the Piece Manager");
             examplePiece1.RequiredItems.Add("FineWood", 20, false); // Set the required items to build. Format: ("PrefabName", Amount, Recoverable)
             examplePiece1.RequiredItems.Add("SurtlingCore", 20, false);
-            examplePiece1.Category.Add(BuildPieceCategory.Misc);
+            examplePiece1.Category.Add(PieceManager.BuildPieceCategory.Misc);
             examplePiece1.Crafting.Set(PieceManager.CraftingTable.ArtisanTable); // Set a crafting station requirement for the piece.
             examplePiece1.Extension.Set(PieceManager.CraftingTable.Forge, 2); // Makes this piece a station extension, can change the max station distance by changing the second value. Use strings for custom tables.
             //examplePiece1.Crafting.Set("CUSTOMTABLE"); // If you have a custom table you're adding to the game. Just set it like this.
@@ -77,7 +79,7 @@ namespace AllManagersModTemplate
             examplePiece2.Name.English("Bamboo Wall");
             examplePiece2.Description.English("A wall made of bamboo!");
             examplePiece2.RequiredItems.Add("BambooLog", 20, false);
-            examplePiece2.Category.Add(BuildPieceCategory.Building);
+            examplePiece2.Category.Add(PieceManager.BuildPieceCategory.Building);
             examplePiece2.Crafting.Set("CUSTOMTABLE"); // If you have a custom table you're adding to the game. Just set it like this.
             examplePiece2.SpecialProperties.AdminOnly = true;  // You can declare these one at a time as well!.
 
@@ -96,8 +98,6 @@ namespace AllManagersModTemplate
             // Does your model need to swap materials with a vanilla material? Format: (GameObject, isJotunnMock)
             MaterialReplacer.RegisterGameObjectForMatSwap(examplePiece3.Prefab, false);
             
-            // Does your model use a shader from the game like Custom/Creature or Custom/Piece in unity? Need it to "just work"?
-            MaterialReplacer.RegisterGameObjectForShaderSwap(examplePiece3.Prefab, MaterialReplacer.ShaderType.UseUnityShader);
             
             // What if you want to use a custom shader from the game (like Custom/Piece that allows snow!!!) but your unity shader isn't set to Custom/Piece? Format: (GameObject, MaterialReplacer.ShaderType.)
             //MaterialReplacer.RegisterGameObjectForShaderSwap(examplePiece3.Prefab, MaterialReplacer.ShaderType.PieceShader);
@@ -259,6 +259,8 @@ namespace AllManagersModTemplate
                 Input = "HeroShield",
                 Piece = ConversionPiece.Smelter
             };
+            
+            heroShield.DropsFrom.Add("Greydwarf", 0.3f, 1, 2); // A Greydwarf has a 30% chance, to drop 1-2 hero shields.
 
             #endregion
 
@@ -365,7 +367,10 @@ namespace AllManagersModTemplate
 
         private class ConfigurationManagerAttributes
         {
-            public bool? Browsable = false;
+            [UsedImplicitly] public int? Order;
+            [UsedImplicitly] public bool? Browsable;
+            [UsedImplicitly] public string? Category;
+            [UsedImplicitly] public Action<ConfigEntryBase>? CustomDrawer;
         }
         class AcceptableShortcuts : AcceptableValueBase
         {
