@@ -91,6 +91,10 @@ namespace AllManagersModTemplate
             examplePiece3.Description.English("A young bamboo tree, called a sapling");
             examplePiece3.RequiredItems.Add("BambooSeed", 20, false);
             examplePiece3.SpecialProperties.NoConfig = true;
+            
+            // If you don't want to make an icon inside unity, but want the PieceManager to snag one for you, simply add .Snapshot() to your piece.
+            examplePiece3.Snapshot(); // Optionally, you can use the lightIntensity parameter to set the light intensity of the snapshot. Default is 1.3 or the cameraRotation parameter to set the rotation of the camera. Default is null.
+
 
             // Need to add something to ZNetScene but not the hammer, cultivator or other? 
             PiecePrefabManager.RegisterPrefab("bamboo", "Bamboo_Beam_Light");
@@ -143,6 +147,25 @@ namespace AllManagersModTemplate
                 Count = 15,
                 Unique = true
             };
+            
+            LocationManager.Location location = new("krumpaclocations", "WaterPit1")
+            {
+                MapIcon = "K_Church_Ruin01.png",
+                ShowMapIcon = ShowIcon.Always,
+                Biome = Heightmap.Biome.Meadows,
+                SpawnDistance = new Range(100, 1500),
+                SpawnAltitude = new Range(5, 150),
+                MinimumDistanceFromGroup = 100,
+                Count = 15
+            };
+		
+            // If your location has creature spawners, you can configure the creature they spawn like this.
+            location.CreatureSpawner.Add("Spawner_1", "Neck");
+            location.CreatureSpawner.Add("Spawner_2", "Troll");
+            location.CreatureSpawner.Add("Spawner_3", "Greydwarf");
+            location.CreatureSpawner.Add("Spawner_4", "Neck");
+            location.CreatureSpawner.Add("Spawner_5", "Troll");
+            location.CreatureSpawner.Add("Spawner_6", "Greydwarf");
             
             #region Location Notes
 

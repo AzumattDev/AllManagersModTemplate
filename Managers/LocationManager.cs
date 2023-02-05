@@ -4,6 +4,8 @@ using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using BepInEx;
+using BepInEx.Configuration;
 using HarmonyLib;
 using JetBrains.Annotations;
 using UnityEngine;
@@ -59,6 +61,7 @@ public class Location
 	public float MinimumDistanceFromGroup = 0f;
 	[Description("When to show the map icon of the location. Requires an icon to be set.\nUse 'Never' to not show a map icon for the location.\nUse 'Always' to always show a map icon for the location.\nUse 'Explored' to start showing a map icon for the location as soon as a player has explored the area.")]
 	public ShowIcon ShowMapIcon = ShowIcon.Never;
+
 	[Description("Sets the map icon for the location.")]
 	public string? MapIcon
 	{
@@ -87,6 +90,8 @@ public class Location
 	public Range SpawnAltitude = new(-1000f, 1000f);
 	[Description("Adds a creature to a spawner that has been added to the location prefab.")]
 	public Dictionary<string, string> CreatureSpawner = new();
+
+	public static bool ConfigurationEnabled = true;
 
 	private readonly global::Location location;
 	private string folderName = "";
@@ -239,12 +244,53 @@ public class Location
 		}
 	}
 
+	private class ConfigurationManagerAttributes
+	{
+		[UsedImplicitly] public int? Order;
+	}
+
+	private static bool firstStartup = true;
+
+	internal static void Patch_FejdStartup()
+	{
+		if (ConfigurationEnabled && firstStartup)
+		{
+			bool SaveOnConfigSet = plugin.Config.SaveOnConfigSet;
+			plugin.Config.SaveOnConfigSet = false;
+
+			foreach (Location location in registeredLocations)
+			{
+				int order = 0;
+				foreach (KeyValuePair<string, string> kv in location.CreatureSpawner)
+				{
+					ConfigEntry<string> spawnerCreature = config(location.location.name, $"{kv.Key} spawns", kv.Value, new ConfigDescription("", null, new ConfigurationManagerAttributes { Order = --order }));
+					spawnerCreature.SettingChanged += (_, _) =>
+					{
+						location.CreatureSpawner[kv.Key] = spawnerCreature.Value;
+						if (ZNetScene.instance && location.location.transform.GetComponentsInChildren<CreatureSpawner>().FirstOrDefault(s => s.name == kv.Key) is { } spawner)
+						{
+							spawner.m_creaturePrefab = ZNetScene.instance.GetPrefab(spawnerCreature.Value);
+						}
+					};
+				}
+			}
+
+			if (SaveOnConfigSet)
+			{
+				plugin.Config.SaveOnConfigSet = true;
+				plugin.Config.Save();
+			}
+		}
+		firstStartup = false;
+	}
+
 	static Location()
 	{
 		Harmony harmony = new("org.bepinex.helpers.LocationManager");
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(ZNetScene), nameof(ZNetScene.Awake)), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(Location), nameof(AddLocationZNetViewsToZNetScene)), Priority.VeryLow));
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(ZoneSystem), nameof(ZoneSystem.SetupLocations)), new HarmonyMethod(AccessTools.DeclaredMethod(typeof(Location), nameof(AddLocationToZoneSystem))));
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(Minimap), nameof(Minimap.Awake)), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(Location), nameof(AddMinimapIcons))));
+		harmony.Patch(AccessTools.DeclaredMethod(typeof(FejdStartup), nameof(FejdStartup.Awake)), new HarmonyMethod(AccessTools.DeclaredMethod(typeof(Location), nameof(Patch_FejdStartup))));
 	}
 
 	private static class PrefabManager
@@ -269,4 +315,63 @@ public class Location
 			return assets;
 		}
 	}
+
+	private static BaseUnityPlugin? _plugin;
+
+	private static BaseUnityPlugin plugin
+	{
+		get
+		{
+			if (_plugin is null)
+			{
+				IEnumerable<TypeInfo> types;
+				try
+				{
+					types = Assembly.GetExecutingAssembly().DefinedTypes.ToList();
+				}
+				catch (ReflectionTypeLoadException e)
+				{
+					types = e.Types.Where(t => t != null).Select(t => t.GetTypeInfo());
+				}
+				_plugin = (BaseUnityPlugin)BepInEx.Bootstrap.Chainloader.ManagerObject.GetComponent(types.First(t => t.IsClass && typeof(BaseUnityPlugin).IsAssignableFrom(t)));
+			}
+			return _plugin;
+		}
+	}
+
+	private static bool hasConfigSync = true;
+	private static object? _configSync;
+
+	private static object? configSync
+	{
+		get
+		{
+			if (_configSync == null && hasConfigSync)
+			{
+				if (Assembly.GetExecutingAssembly().GetType("ServerSync.ConfigSync") is { } configSyncType)
+				{
+					_configSync = Activator.CreateInstance(configSyncType, plugin.Info.Metadata.GUID + " ItemManager");
+					configSyncType.GetField("CurrentVersion").SetValue(_configSync, plugin.Info.Metadata.Version.ToString());
+					configSyncType.GetProperty("IsLocked")!.SetValue(_configSync, true);
+				}
+				else
+				{
+					hasConfigSync = false;
+				}
+			}
+
+			return _configSync;
+		}
+	}
+
+	private static ConfigEntry<T> config<T>(string group, string name, T value, ConfigDescription description)
+	{
+		ConfigEntry<T> configEntry = plugin.Config.Bind(group, name, value, description);
+
+		configSync?.GetType().GetMethod("AddConfigEntry")!.MakeGenericMethod(typeof(T)).Invoke(configSync, new object[] { configEntry });
+
+		return configEntry;
+	}
+
+	private static ConfigEntry<T> config<T>(string group, string name, T value, string description) => config(group, name, value, new ConfigDescription(description));
 }

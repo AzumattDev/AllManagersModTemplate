@@ -58,9 +58,11 @@ namespace PieceManager
         }
 
 
+        private static bool hasRun;
         [HarmonyPriority(Priority.VeryHigh)]
         private static void ReplaceAllMaterialsWithOriginal()
         {
+            if (hasRun) return;
             if (originalMaterials.Count <= 0) GetAllMaterials();
             foreach (Renderer? renderer in _objectToSwap.SelectMany(gameObject =>
                          gameObject.Key.GetComponentsInChildren<Renderer>(true)))
@@ -153,6 +155,7 @@ namespace PieceManager
                     }
                 }
             }
+            hasRun = true;
         }
     }
 }

@@ -455,7 +455,7 @@ public class Creature
 			spawnConfig(cfg.RequiredOceanDepth, () => creature.RequiredOceanDepth, "Required ocean depth", "Configures the ocean depth required for the creature to spawn.");
 			spawnConfig(cfg.RequiredGlobalKey, () => creature.RequiredGlobalKey, "Required global key", "Configures the global key required for the creature to spawn.");
 			spawnConfig(cfg.GroupSize, () => creature.GroupSize, "Group size", "Configures the size of the groups in which the creature spawns.");
-			spawnConfig(cfg.Biome, () => creature.Biome, "Biome", "Configures the biome required for the creature to spawn.", new AcceptableEnumValues<Heightmap.Biome>(Enum.GetValues(typeof(Heightmap.Biome)).Cast<Heightmap.Biome>().Where(e => e != Heightmap.Biome.BiomesMax).ToArray()));
+			spawnConfig(cfg.Biome, () => creature.Biome, "Biome", "Configures the biome required for the creature to spawn.");
 			spawnConfig(cfg.SpecificSpawnArea, () => creature.SpecificSpawnArea, "Spawn area", "Configures if the creature spawns more towards the center or the edge of the biome.");
 			spawnConfig(cfg.RequiredWeather, () => creature.RequiredWeather, "Required weather", "Configures the weather required for the creature to spawn.");
 			spawnConfig(cfg.SpawnAltitude, () => creature.SpawnAltitude, "Spawn altitude", "Configures the height from the ground in which the creature will spawn.");
@@ -876,6 +876,19 @@ public static class PrefabManager
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(ObjectDB), nameof(ObjectDB.Awake)), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(Creature), nameof(Creature.UpdateCreatureAis))));
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(FejdStartup), nameof(FejdStartup.Awake)), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(Creature), nameof(Creature.Patch_FejdStartup))));
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(Localization), nameof(Localization.LoadCSV)), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(LocalizeKey), nameof(LocalizeKey.AddLocalizedKeys))));
+		if (!typeof(Heightmap.Biome).GetCustomAttributes(typeof(FlagsAttribute), false).Any())
+		{
+			// ReSharper disable once PossibleMistakenCallToGetType.2
+			harmony.Patch(AccessTools.Method(typeof(Heightmap.Biome).GetType(), "GetCustomAttributes", new[] { typeof(Type), typeof(bool) }), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(PrefabManager), nameof(BiomeIsFlags))));
+		}
+	}
+
+	private static void BiomeIsFlags(Type __instance, Type attributeType, ref object[] __result)
+	{
+		if (__instance == typeof(Heightmap.Biome) && attributeType == typeof(FlagsAttribute))
+		{
+			__result = new object[] { new FlagsAttribute() };
+		}
 	}
 
 	private struct BundleId

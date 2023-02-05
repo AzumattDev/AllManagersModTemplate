@@ -372,10 +372,11 @@ public class Item
 						int order = 0;
 
 						string configSuffix = configKey == "" ? "" : $" ({configKey})";
-						ItemConfig cfg = itemCraftConfigs[item][configKey] = new ItemConfig();
 
 						if (item.Recipes.ContainsKey(configKey) && item.Recipes[configKey].Crafting.Stations.Count > 0)
 						{
+							ItemConfig cfg = itemCraftConfigs[item][configKey] = new ItemConfig();
+
 							List<ConfigurationManagerAttributes> hideWhenNoneAttributes = new();
 
 							cfg.table = config(englishName, "Crafting Station" + configSuffix, item.Recipes[configKey].Crafting.Stations.First().Table, new ConfigDescription($"Crafting station where {englishName} is available.", null, new ConfigurationManagerAttributes { Order = --order, Browsable = (item.configurationVisible & Configurability.Recipe) != 0, Category = localizedName }));
@@ -469,7 +470,7 @@ public class Item
 
 					if ((item.configurability & Configurability.Drop) != 0)
 					{
-						ConfigEntry<string> dropConfig = itemDropConfigs[item] = config(englishName, "Drops from", new SerializedDrop(item.DropsFrom.Drops).ToString(), new ConfigDescription($"Creatures {englishName} drops from", null, new ConfigurationManagerAttributes { CustomDrawer = drawDropsConfigTable, Category = localizedName, Browsable = (item.configurationVisible & Configurability.Drop) != 0 }));
+						ConfigEntry<string> dropConfig = itemDropConfigs[item] = config(englishName, "Drops from", new SerializedDrop(item.DropsFrom.Drops).ToString(), new ConfigDescription($"{englishName} drops from this creature.", null, new ConfigurationManagerAttributes { CustomDrawer = drawDropsConfigTable, Category = localizedName, Browsable = (item.configurationVisible & Configurability.Drop) != 0 }));
 						dropConfig.SettingChanged += (_, _) => item.UpdateCharacterDrop();
 					}
 
@@ -563,7 +564,7 @@ public class Item
 								}
 							}
 						}
-						
+
 						item.statsConfigs.Add(cfg, ApplyConfig);
 
 						cfg.SettingChanged += (_, _) =>
@@ -805,11 +806,11 @@ public class Item
 					recipe.m_enabled = (int)(kv.Value.RecipeIsActive?.BoxedValue ?? 1) != 0;
 
 					recipes.Add(recipe);
-					if (!item[kv.Key].RequiredItems.Free && item[kv.Key].RequiredItems.Requirements.Count == 0)
+					if (item[kv.Key].RequiredItems is { Free: false, Requirements.Count: 0 })
 					{
 						hiddenCraftRecipes.Add(recipe, kv.Value.RecipeIsActive);
 					}
-					if (!item[kv.Key].RequiredUpgradeItems.Free && item[kv.Key].RequiredUpgradeItems.Requirements.Count == 0)
+					if (item[kv.Key].RequiredUpgradeItems is { Free: false, Requirements.Count: 0 })
 					{
 						hiddenUpgradeRecipes.Add(recipe, kv.Value.RecipeIsActive);
 					}
@@ -1122,7 +1123,7 @@ public class Item
 			float chance = drop.chance;
 			if (float.TryParse(GUILayout.TextField((chance * 100).ToString(CultureInfo.InvariantCulture), new GUIStyle(GUI.skin.textField) { fixedWidth = 45 }), out float newChance) && !Mathf.Approximately(newChance / 100, chance) && !locked)
 			{
-				chance = newChance;
+				chance = newChance / 100;
 				wasUpdated = true;
 			}
 			GUILayout.Label("% Amount: ");

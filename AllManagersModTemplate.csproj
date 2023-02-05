@@ -144,6 +144,9 @@
         </Content>
         <Content Include="LICENSE.txt" />
         <Content Include="README.md" />
+        <Content Include="Thunderstore\icon.png" />
+        <Content Include="Thunderstore\manifest.json" />
+        <Content Include="UpdateManifest.ps1" />
     </ItemGroup>
     <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
     <Import Project="packages\ILRepack.Lib.MSBuild.Task.2.0.18.2\build\ILRepack.Lib.MSBuild.Task.targets" Condition="Exists('packages\ILRepack.Lib.MSBuild.Task.2.0.18.2\build\ILRepack.Lib.MSBuild.Task.targets')" />
@@ -160,5 +163,57 @@
     <Target Name="AfterBuild">
     </Target>
     -->
+
+    <Target Name="GetAssemblyVersion" AfterTargets="ILRepacker">
+        <GetAssemblyIdentity AssemblyFiles="$(TargetPath)">
+            <Output TaskParameter="Assemblies" ItemName="Targets" />
+        </GetAssemblyIdentity>
+        <ItemGroup>
+            <AssemblyVersions Include="@(Targets->'%(Version)')" />
+        </ItemGroup>
+        <PropertyGroup>
+            <AssemblyVersion>%(AssemblyVersions.Identity)</AssemblyVersion>
+            <Major>$(AssemblyVersion.Split('.')[0])</Major>
+            <Minor>$(AssemblyVersion.Split('.')[1])</Minor>
+            <Patch>$(AssemblyVersion.Split('.')[2])</Patch>
+            <PackageName>$(AssemblyName)_v$(Major).$(Minor).$(Patch)</PackageName>
+            <PackageVersion>$(Major).$(Minor).$(Patch)</PackageVersion>
+            <VersionString>$(Major).$(Minor).$(Patch)</VersionString>
+            <PackageDir>Thunderstore\$(PackageName)</PackageDir>
+        </PropertyGroup>
+    </Target>
+    <Target Name="Copy" AfterTargets="GetAssemblyVersion">
+        <Exec Command="copy /Y &quot;$(TargetDir)$(AssemblyName).dll&quot; &quot;$(GamePath)\BepInEx\plugins\$(AssemblyName).dll&quot;" />
+        <Exec Command="copy /Y &quot;README.md&quot; &quot;Thunderstore\README.md&quot;" />
+    </Target>
+    <Target Name="UpdateManifestVersion" AfterTargets="Copy" Condition="'$(OS)' == 'Windows_NT'">
+        <ItemGroup>
+            <ManifestFile Include="$(ProjectDir)Thunderstore\manifest.json" />
+        </ItemGroup>
+
+        <Message Text="ManifestFile is @(ManifestFile)" />
+        <Error Text="Thunderstore\manifest.json not found" Condition="!Exists(@(ManifestFile))" />
+        <Message Text="Updating version number in Thunderstore\manifest.json" Condition="Exists(@(ManifestFile))" />
+        <Exec Command="powershell.exe -ExecutionPolicy Bypass -Command &quot;&amp; { &amp; '$(ProjectDir)UpdateManifest.ps1' -manifestFile '@(ManifestFile)' -versionString '$(PackageVersion)' }&quot;" />
+    </Target>
+    <Target Name="MakeThunderstorePackage" AfterTargets="UpdateManifestVersion" Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+        <ItemGroup>
+            <PackageFiles Include="$(TargetDir)$(AssemblyName).dll; Thunderstore\README.md; Thunderstore\manifest.json; Thunderstore\icon.png;" />
+        </ItemGroup>
+        <MakeDir Directories="$(PackageDir)" />
+        <Copy SourceFiles="@(PackageFiles)" DestinationFolder="$(PackageDir)" />
+        <ZipDirectory SourceDirectory="$(PackageDir)" DestinationFile="Thunderstore\$(PackageName).zip" Overwrite="true" />
+        <RemoveDir Directories="$(PackageDir)" />
+    </Target>
+    <Target Name="MakeNexusPackage" AfterTargets="MakeThunderstorePackage" Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+        <MakeDir Directories="$(ProjectDir)\Nexus" />
+        <ItemGroup>
+            <NexusPackageFiles Include="$(TargetDir)$(AssemblyName).dll;"/>
+        </ItemGroup>
+        <MakeDir Directories="$(PackageDir)"/>
+        <Copy SourceFiles="@(NexusPackageFiles)" DestinationFolder="$(PackageDir)"/>
+        <ZipDirectory SourceDirectory="$(PackageDir)" DestinationFile="Nexus\$(PackageName).zip" Overwrite="true"/>
+        <RemoveDir Directories="$(PackageDir)"/>
+    </Target>
 
 </Project>
