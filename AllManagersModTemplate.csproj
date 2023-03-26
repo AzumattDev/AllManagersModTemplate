@@ -102,10 +102,15 @@
         <Reference Include="UnityEngine.UI">
             <HintPath>$(GamePath)\unstripped_corlib\UnityEngine.UI.dll</HintPath>
         </Reference>
+        <Reference Include="YamlDotNet, Version=13.0.0.0, Culture=neutral, PublicKeyToken=ec19458f3c15af5e, processorArchitecture=MSIL">
+          <HintPath>packages\YamlDotNet.13.0.2\lib\net45\YamlDotNet.dll</HintPath>
+        </Reference>
     </ItemGroup>
     <ItemGroup>
         <Compile Include="Managers\CreatureManager.cs" />
+        <Compile Include="Managers\ItemDataManager.cs" />
         <Compile Include="Managers\ItemManager.cs" />
+        <Compile Include="Managers\LocalizationManager.cs" />
         <Compile Include="Managers\LocationManager.cs" />
         <Compile Include="Managers\PieceManager\MaterialReplacer.cs" />
         <Compile Include="Managers\PieceManager\PieceManager.cs" />
@@ -117,6 +122,7 @@
         <Compile Include="VersionHandshake.cs" />
     </ItemGroup>
     <ItemGroup>
+        <None Include="App.config" />
         <None Include="packages.config" />
     </ItemGroup>
     <ItemGroup>
@@ -127,9 +133,11 @@
         <Content Include="Libs\CreatureManager.dll">
           <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </Content>
+        <Content Include="Libs\ItemDataManager.dll" />
         <Content Include="Libs\ItemManager.dll">
           <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </Content>
+        <Content Include="Libs\LocalizationManager.dll" />
         <Content Include="Libs\LocationManager.dll">
           <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </Content>
@@ -142,10 +150,12 @@
         <Content Include="Libs\SkillManager.dll">
           <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </Content>
-        <Content Include="LICENSE.txt" />
+        <Content Include="LICENSE.md" />
         <Content Include="README.md" />
+        <Content Include="Thunderstore\CHANGELOG.md" />
         <Content Include="Thunderstore\icon.png" />
         <Content Include="Thunderstore\manifest.json" />
+        <EmbeddedResource Include="translations\English.yml" />
         <Content Include="UpdateManifest.ps1" />
     </ItemGroup>
     <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
@@ -198,7 +208,7 @@
     </Target>
     <Target Name="MakeThunderstorePackage" AfterTargets="UpdateManifestVersion" Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
         <ItemGroup>
-            <PackageFiles Include="$(TargetDir)$(AssemblyName).dll; Thunderstore\README.md; Thunderstore\manifest.json; Thunderstore\icon.png;" />
+            <PackageFiles Include="$(TargetDir)$(AssemblyName).dll; Thunderstore\README.md; Thunderstore\CHANGELOG.md; Thunderstore\manifest.json; Thunderstore\icon.png;" />
         </ItemGroup>
         <MakeDir Directories="$(PackageDir)" />
         <Copy SourceFiles="@(PackageFiles)" DestinationFolder="$(PackageDir)" />
@@ -208,12 +218,12 @@
     <Target Name="MakeNexusPackage" AfterTargets="MakeThunderstorePackage" Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
         <MakeDir Directories="$(ProjectDir)\Nexus" />
         <ItemGroup>
-            <NexusPackageFiles Include="$(TargetDir)$(AssemblyName).dll;"/>
+            <NexusPackageFiles Include="$(TargetDir)$(AssemblyName).dll;" />
         </ItemGroup>
-        <MakeDir Directories="$(PackageDir)"/>
-        <Copy SourceFiles="@(NexusPackageFiles)" DestinationFolder="$(PackageDir)"/>
-        <ZipDirectory SourceDirectory="$(PackageDir)" DestinationFile="Nexus\$(PackageName).zip" Overwrite="true"/>
-        <RemoveDir Directories="$(PackageDir)"/>
+        <MakeDir Directories="$(PackageDir)" />
+        <Copy SourceFiles="@(NexusPackageFiles)" DestinationFolder="$(PackageDir)" />
+        <ZipDirectory SourceDirectory="$(PackageDir)" DestinationFile="Nexus\$(PackageName).zip" Overwrite="true" />
+        <RemoveDir Directories="$(PackageDir)" />
     </Target>
 
 </Project>

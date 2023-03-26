@@ -12,10 +12,10 @@ namespace PieceManager
     {
         static MaterialReplacer()
         {
-            originalMaterials = new Dictionary<string, Material>();
-            _objectToSwap = new Dictionary<GameObject, bool>();
-            _objectsForShaderReplace = new Dictionary<GameObject, ShaderType>();
-            Harmony harmony = new("org.bepinex.helpers.PieceManager");
+            OriginalMaterials = new Dictionary<string, Material>();
+            ObjectToSwap = new Dictionary<GameObject, bool>();
+            ObjectsForShaderReplace = new Dictionary<GameObject, ShaderType>();
+            Harmony harmony = new Harmony("org.bepinex.helpers.PieceManager");
             harmony.Patch(AccessTools.DeclaredMethod(typeof(ZoneSystem), nameof(ZoneSystem.Start)),
                 postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(MaterialReplacer),
                     nameof(ReplaceAllMaterialsWithOriginal))));
@@ -32,77 +32,59 @@ namespace PieceManager
             UseUnityShader
         }
 
-        private static Dictionary<GameObject, bool> _objectToSwap;
-        internal static Dictionary<string, Material> originalMaterials;
-        private static Dictionary<GameObject, ShaderType> _objectsForShaderReplace;
+        private static readonly Dictionary<GameObject, bool> ObjectToSwap;
+        internal static readonly Dictionary<string, Material> OriginalMaterials;
+        private static readonly Dictionary<GameObject, ShaderType> ObjectsForShaderReplace;
 
         public static void RegisterGameObjectForShaderSwap(GameObject go, ShaderType type)
         {
-            if (_objectsForShaderReplace.ContainsKey(go)) return;
-            _objectsForShaderReplace?.Add(go, type);
+            if (ObjectsForShaderReplace.ContainsKey(go)) return;
+            ObjectsForShaderReplace.Add(go, type);
         }
 
         public static void RegisterGameObjectForMatSwap(GameObject go, bool isJotunnMock = false)
         {
-            if (_objectToSwap.ContainsKey(go)) return;
-            _objectToSwap.Add(go, isJotunnMock);
+            if (ObjectToSwap.ContainsKey(go)) return;
+            ObjectToSwap.Add(go, isJotunnMock);
         }
 
         private static void GetAllMaterials()
         {
-            Material[]? allmats = Resources.FindObjectsOfTypeAll<Material>();
-            foreach (Material? item in allmats)
+            Material[] allMats = Resources.FindObjectsOfTypeAll<Material>();
+            foreach (Material item in allMats)
             {
-                originalMaterials[item.name] = item;
+                OriginalMaterials[item.name] = item;
             }
         }
-
 
         private static bool hasRun;
         [HarmonyPriority(Priority.VeryHigh)]
         private static void ReplaceAllMaterialsWithOriginal()
         {
+            if (UnityEngine.SystemInfo.graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.Null) return;
             if (hasRun) return;
-            if (originalMaterials.Count <= 0) GetAllMaterials();
-            foreach (Renderer? renderer in _objectToSwap.SelectMany(gameObject =>
-                         gameObject.Key.GetComponentsInChildren<Renderer>(true)))
+            if (OriginalMaterials.Count <= 0) GetAllMaterials();
+            foreach (Renderer renderer in ObjectToSwap.Keys.SelectMany(gameObject =>
+                         gameObject.GetComponentsInChildren<Renderer>(true)))
             {
-                _objectToSwap.TryGetValue(renderer.gameObject, out bool jotunnPrefabFlag);
+                ObjectToSwap.TryGetValue(renderer.gameObject, out bool jotunnPrefabFlag);
                 Material[] newMats = new Material[renderer.sharedMaterials.Length];
                 int i = 0;
-                foreach (Material? t in renderer.sharedMaterials)
+                foreach (Material t in renderer.sharedMaterials)
                 {
                     string replacementString = jotunnPrefabFlag ? "JVLmock_" : "_REPLACE_";
                     if (!t.name.StartsWith(replacementString, StringComparison.Ordinal)) continue;
-                    string matName = renderer.material.name.Replace(" (Instance)", string.Empty)
+                    string matName = t.name.Replace(" (Instance)", string.Empty)
                         .Replace(replacementString, "");
 
-                    string matNames = t.name.Replace(" (Instance)", string.Empty)
-                        .Replace(replacementString, "");
-
-                    if (originalMaterials.ContainsKey(matNames))
+                    if (OriginalMaterials.ContainsKey(matName))
                     {
-                        if (i <= renderer.materials.Length)
-                        {
-                            newMats[i] = originalMaterials[matNames];
-                        }
-                    }
-                    else
-                    {
-                        Debug.LogWarning("No suitable material found to replace: " + matNames);
-                        // Skip over this material in future
-                        originalMaterials[matNames] = newMats[i];
-                    }
-
-                    if (originalMaterials.ContainsKey(matName))
-                    {
-                        renderer.material = originalMaterials[matName];
+                        newMats[i] = OriginalMaterials[matName];
                     }
                     else
                     {
                         Debug.LogWarning("No suitable material found to replace: " + matName);
-                        // Skip over this material in future
-                        originalMaterials[matName] = renderer.material;
+                        OriginalMaterials[matName] = newMats[i];
                     }
 
                     ++i;
@@ -112,10 +94,10 @@ namespace PieceManager
                 renderer.sharedMaterials = newMats;
             }
 
-            foreach (Renderer? renderer in _objectsForShaderReplace.SelectMany(gameObject =>
-                         gameObject.Key.GetComponentsInChildren<Renderer>(true)))
+            foreach (Renderer? renderer in ObjectsForShaderReplace.Keys.SelectMany(gameObject =>
+                         gameObject.GetComponentsInChildren<Renderer>(true)))
             {
-                _objectsForShaderReplace.TryGetValue(renderer.gameObject.transform.root.gameObject,
+                ObjectsForShaderReplace.TryGetValue(renderer.gameObject.transform.root.gameObject,
                     out ShaderType shaderType);
                 if (renderer == null) continue;
                 foreach (Material? t in renderer.sharedMaterials)
@@ -147,7 +129,6 @@ namespace PieceManager
                             {
                                 t.shader = Shader.Find(name);
                             }
-
                             break;
                         default:
                             t.shader = Shader.Find("ToonDeferredShading2017");

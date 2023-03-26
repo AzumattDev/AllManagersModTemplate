@@ -74,6 +74,8 @@ public class ItemRecipe
 	public readonly RequiredResourceList RequiredUpgradeItems = new();
 	public readonly CraftingStationList Crafting = new();
 	public int CraftAmount = 1;
+	public bool RequireOnlyOneIngredient = false;
+	public float QualityResultAmountMultiplier = 1;
 	public ConfigEntryBase? RecipeIsActive = null;
 }
 
@@ -119,6 +121,12 @@ public struct DropTarget
 	public float chance;
 }
 
+public enum Toggle
+{
+	On = 1,
+	Off = 0
+}
+
 [PublicAPI]
 public class Item
 {
@@ -130,6 +138,8 @@ public class Item
 		public ConfigEntry<int> tableLevel = null!;
 		public ConfigEntry<string> customTable = null!;
 		public ConfigEntry<int>? maximumTableLevel;
+		public ConfigEntry<Toggle> requireOneIngredient = null!;
+		public ConfigEntry<float> qualityResultAmountMultiplier = null!;
 	}
 
 	private static readonly List<Item> registeredItems = new();
@@ -174,6 +184,18 @@ public class Item
 
 	[Description("Specifies the maximum required crafting station level to upgrade and repair the item.\nDefault is calculated from crafting station level and maximum quality.")]
 	public int MaximumRequiredStationLevel = int.MaxValue;
+
+	public bool RequireOnlyOneIngredient
+	{
+		get => this[""].RequireOnlyOneIngredient;
+		set => this[""].RequireOnlyOneIngredient = value;
+	}
+
+	public float QualityResultAmountMultiplier
+	{
+		get => this[""].QualityResultAmountMultiplier;
+		set => this[""].QualityResultAmountMultiplier = value;
+	}
 
 	[Description("Assigns the item as a drop item to a creature.\nUses a creature name, a drop chance and a minimum and maximum amount.")]
 	public readonly DropTargets DropsFrom = new();
@@ -428,6 +450,33 @@ public class Item
 							{
 								cfg.maximumTableLevel = config(englishName, "Maximum Crafting Station Level" + configSuffix, item.MaximumRequiredStationLevel == int.MaxValue ? item.Recipes[configKey].Crafting.Stations.First().level + item.Prefab.GetComponent<ItemDrop>().m_itemData.m_shared.m_maxQuality - 1 : item.MaximumRequiredStationLevel, new ConfigDescription($"Maximum crafting station level to upgrade and repair {englishName}.", null, tableLevelAttributes));
 							}
+
+							bool QualityResultBrowsability() => cfg.requireOneIngredient.Value == Toggle.On;
+							cfg.requireOneIngredient = config(englishName, "Require only one resource" + configSuffix, item.Recipes[configKey].RequireOnlyOneIngredient ? Toggle.On : Toggle.Off, new ConfigDescription($"Whether only one of the ingredients is needed to craft {englishName}", null, new ConfigurationManagerAttributes { Order = --order, Category = localizedName }));
+							ConfigurationManagerAttributes qualityResultAttributes = new() { Order = --order, browsability = QualityResultBrowsability, Browsable = QualityResultBrowsability() && (item.configurationVisible & Configurability.Recipe) != 0, Category = localizedName };
+							cfg.requireOneIngredient.SettingChanged += (_, _) =>
+							{
+								if (activeRecipes.ContainsKey(item) && activeRecipes[item].TryGetValue(configKey, out List<Recipe> recipes))
+								{
+									foreach (Recipe recipe in recipes)
+									{
+										recipe.m_requireOnlyOneIngredient = cfg.requireOneIngredient.Value == Toggle.On;
+									}
+								}
+								qualityResultAttributes.Browsable = QualityResultBrowsability();
+								reloadConfigDisplay();
+							};
+							cfg.qualityResultAmountMultiplier = config(englishName, "Quality Multiplier" + configSuffix, item.Recipes[configKey].QualityResultAmountMultiplier, new ConfigDescription($"Multiplies the crafted amount based on the quality of the resources when crafting {englishName}. Only works, if Require Only One Resource is true.", null, qualityResultAttributes));
+							cfg.qualityResultAmountMultiplier.SettingChanged += (_, _) =>
+							{
+								if (activeRecipes.ContainsKey(item) && activeRecipes[item].TryGetValue(configKey, out List<Recipe> recipes))
+								{
+									foreach (Recipe recipe in recipes)
+									{
+										recipe.m_qualityResultAmountMultiplier = cfg.qualityResultAmountMultiplier.Value;
+									}
+								}
+							};
 
 							ConfigEntry<string> itemConfig(string name, string value, string desc)
 							{
@@ -779,10 +828,10 @@ public class Item
 
 					Recipe recipe = ScriptableObject.CreateInstance<Recipe>();
 					recipe.name = $"{item.Prefab.name}_Recipe_{station.Table.ToString()}";
-					recipe.m_amount = item[kv.Key].CraftAmount;
+					recipe.m_amount = kv.Value.CraftAmount;
 					recipe.m_enabled = cfg?.table.Value != CraftingTable.Disabled;
 					recipe.m_item = item.Prefab.GetComponent<ItemDrop>();
-					recipe.m_resources = SerializedRequirements.toPieceReqs(__instance, cfg?.craft == null ? new SerializedRequirements(item[kv.Key].RequiredItems.Requirements) : new SerializedRequirements(cfg.craft.Value), cfg?.upgrade == null ? new SerializedRequirements(item[kv.Key].RequiredUpgradeItems.Requirements) : new SerializedRequirements(cfg.upgrade.Value));
+					recipe.m_resources = SerializedRequirements.toPieceReqs(__instance, cfg?.craft == null ? new SerializedRequirements(kv.Value.RequiredItems.Requirements) : new SerializedRequirements(cfg.craft.Value), cfg?.upgrade == null ? new SerializedRequirements(kv.Value.RequiredUpgradeItems.Requirements) : new SerializedRequirements(cfg.upgrade.Value));
 					if ((cfg == null || recipes.Count > 0 ? station.Table : cfg.table.Value) is CraftingTable.Inventory or CraftingTable.Disabled)
 					{
 						recipe.m_craftingStation = null;
@@ -803,14 +852,16 @@ public class Item
 						recipe.m_craftingStation = ZNetScene.instance.GetPrefab(getInternalName(cfg == null || recipes.Count > 0 ? station.Table : cfg.table.Value)).GetComponent<CraftingStation>();
 					}
 					recipe.m_minStationLevel = cfg == null || recipes.Count > 0 ? station.level : cfg.tableLevel.Value;
+					recipe.m_requireOnlyOneIngredient = cfg == null ? kv.Value.RequireOnlyOneIngredient : cfg.requireOneIngredient.Value == Toggle.On;
+					recipe.m_qualityResultAmountMultiplier = cfg?.qualityResultAmountMultiplier.Value ?? kv.Value.QualityResultAmountMultiplier;
 					recipe.m_enabled = (int)(kv.Value.RecipeIsActive?.BoxedValue ?? 1) != 0;
 
 					recipes.Add(recipe);
-					if (item[kv.Key].RequiredItems is { Free: false, Requirements.Count: 0 })
+					if (kv.Value.RequiredItems is { Free: false, Requirements.Count: 0 })
 					{
 						hiddenCraftRecipes.Add(recipe, kv.Value.RecipeIsActive);
 					}
-					if (item[kv.Key].RequiredUpgradeItems is { Free: false, Requirements.Count: 0 })
+					if (kv.Value.RequiredUpgradeItems is { Free: false, Requirements.Count: 0 })
 					{
 						hiddenUpgradeRecipes.Add(recipe, kv.Value.RecipeIsActive);
 					}
