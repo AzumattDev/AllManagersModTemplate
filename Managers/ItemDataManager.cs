@@ -627,13 +627,13 @@ public class ItemInfo : IEnumerable<ItemData>
 		{
 			ZNetView netView = item.GetComponent<ZNetView>();
 			ZDO? zdo = netView && netView.IsValid() ? netView.GetZDO() : null;
-			if (zdo?.m_ints?.ContainsKey("dataCount".GetStableHashCode()) != true)
+			if (zdo is null || zdo.GetInt(ZDOVars.s_dataCount, -1) == -1)
 			{
 				item.m_itemData.m_customData = new Dictionary<string, string>(prefab.GetComponent<ItemDrop>().m_itemData.m_customData);
 				if (zdo is not null)
 				{
 					int num = 0;
-					zdo.Set("dataCount", item.m_itemData.m_customData.Count);
+					zdo.Set(ZDOVars.s_dataCount, item.m_itemData.m_customData.Count);
 					foreach (KeyValuePair<string, string> keyValuePair in item.m_itemData.m_customData)
 					{
 						zdo.Set($"data_{num}", keyValuePair.Key);
