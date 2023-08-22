@@ -44,7 +44,7 @@ public class CustomSE
     public EffectType Type;
 
     private string _folderName = "icons";
-    private AssetBundle? _assetBundle;
+    private AssetBundle _assetBundle = null!;
 
     [Description("Sets the icon for the StatusEffect. Must be 64x64")]
     public string? Icon
@@ -429,8 +429,7 @@ public static class EffectManager
             }
             catch (Exception e)
             {
-                Debug.LogWarning(
-                    $"BROKE");
+                Debug.LogWarning($"BROKE : {e}");
             }
         }
     }

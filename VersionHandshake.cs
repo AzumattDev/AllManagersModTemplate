@@ -1,5 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
 using HarmonyLib;
 
 namespace AllManagersModTemplate
@@ -11,13 +15,13 @@ namespace AllManagersModTemplate
         {
             // Register version check call
             AllManagersModTemplatePlugin.AllManagersModTemplateLogger.LogDebug("Registering version RPC handler");
-            peer.m_rpc.Register($"{AllManagersModTemplatePlugin.ModName}_VersionCheck",
-                new Action<ZRpc, ZPackage>(RpcHandlers.RPC_AllManagersModTemplate_Version));
+            peer.m_rpc.Register($"{AllManagersModTemplatePlugin.ModName}_VersionCheck", new Action<ZRpc, ZPackage>(RpcHandlers.RPC_AllManagersModTemplate_Version));
 
             // Make calls to check versions
             AllManagersModTemplatePlugin.AllManagersModTemplateLogger.LogDebug("Invoking version check");
             ZPackage zpackage = new();
             zpackage.Write(AllManagersModTemplatePlugin.ModVersion);
+            zpackage.Write(RpcHandlers.ComputeHashForMod().Replace("-", ""));
             peer.m_rpc.Invoke($"{AllManagersModTemplatePlugin.ModName}_VersionCheck", zpackage);
         }
     }
@@ -29,15 +33,14 @@ namespace AllManagersModTemplate
         {
             if (!__instance.IsServer() || RpcHandlers.ValidatedPeers.Contains(rpc)) return true;
             // Disconnect peer if they didn't send mod version at all
-            AllManagersModTemplatePlugin.AllManagersModTemplateLogger.LogWarning(
-                $"Peer ({rpc.m_socket.GetHostName()}) never sent version or couldn't due to previous disconnect, disconnecting");
+            AllManagersModTemplatePlugin.AllManagersModTemplateLogger.LogWarning($"Peer ({rpc.m_socket.GetHostName()}) never sent version or couldn't due to previous disconnect, disconnecting");
             rpc.Invoke("Error", 3);
             return false; // Prevent calling underlying method
         }
 
         private static void Postfix(ZNet __instance)
         {
-            ZRoutedRpc.instance.InvokeRoutedRPC(ZRoutedRpc.instance.GetServerPeerID(), "RequestAdminSync",
+            ZRoutedRpc.instance.InvokeRoutedRPC(ZRoutedRpc.instance.GetServerPeerID(), $"{AllManagersModTemplatePlugin.ModName}RequestAdminSync",
                 new ZPackage());
         }
     }
@@ -76,17 +79,18 @@ namespace AllManagersModTemplate
         public static void RPC_AllManagersModTemplate_Version(ZRpc rpc, ZPackage pkg)
         {
             string? version = pkg.ReadString();
+            string? hash = pkg.ReadString();
+
+            var hashForAssembly = ComputeHashForMod().Replace("-", "");
             AllManagersModTemplatePlugin.AllManagersModTemplateLogger.LogInfo("Version check, local: " +
                                                                               AllManagersModTemplatePlugin.ModVersion +
                                                                               ",  remote: " + version);
-            if (version != AllManagersModTemplatePlugin.ModVersion)
+            if (hash != hashForAssembly || version != AllManagersModTemplatePlugin.ModVersion)
             {
-                AllManagersModTemplatePlugin.ConnectionError =
-                    $"{AllManagersModTemplatePlugin.ModName} Installed: {AllManagersModTemplatePlugin.ModVersion}\n Needed: {version}";
+                AllManagersModTemplatePlugin.ConnectionError = $"{AllManagersModTemplatePlugin.ModName} Installed: {AllManagersModTemplatePlugin.ModVersion} {hashForAssembly}\n Needed: {version} {hash}";
                 if (!ZNet.instance.IsServer()) return;
                 // Different versions - force disconnect client from server
-                AllManagersModTemplatePlugin.AllManagersModTemplateLogger.LogWarning(
-                    $"Peer ({rpc.m_socket.GetHostName()}) has incompatible version, disconnecting");
+                AllManagersModTemplatePlugin.AllManagersModTemplateLogger.LogWarning($"Peer ({rpc.m_socket.GetHostName()}) has incompatible version, disconnecting...");
                 rpc.Invoke("Error", 3);
             }
             else
@@ -105,6 +109,21 @@ namespace AllManagersModTemplate
                     ValidatedPeers.Add(rpc);
                 }
             }
+        }
+
+        public static string ComputeHashForMod()
+        {
+            using SHA256 sha256Hash = SHA256.Create();
+            // ComputeHash - returns byte array  
+            byte[] bytes = sha256Hash.ComputeHash(File.ReadAllBytes(Assembly.GetExecutingAssembly().Location));
+            // Convert byte array to a string   
+            StringBuilder builder = new();
+            foreach (byte b in bytes)
+            {
+                builder.Append(b.ToString("X2"));
+            }
+
+            return builder.ToString();
         }
     }
 }

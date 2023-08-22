@@ -1,7 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-    <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
-    <Import Project="environment.props" />
+    <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')"/>
+    <Import Project="environment.props"/>
     <PropertyGroup>
         <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
         <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
@@ -79,10 +79,10 @@
         <Reference Include="ServerSync">
             <HintPath>Libs\ServerSync.dll</HintPath>
         </Reference>
-        <Reference Include="System" />
-        <Reference Include="System.Core" />
-        <Reference Include="System.Data" />
-        <Reference Include="System.Xml" />
+        <Reference Include="System"/>
+        <Reference Include="System.Core"/>
+        <Reference Include="System.Data"/>
+        <Reference Include="System.Xml"/>
         <Reference Include="UnityEngine">
             <HintPath>$(CorlibPath)\UnityEngine.dll</HintPath>
         </Reference>
@@ -107,42 +107,45 @@
         <Reference Include="UnityEngine.PhysicsModule">
             <HintPath>$(CorlibPath)\UnityEngine.PhysicsModule.dll</HintPath>
         </Reference>
+        <Reference Include="UnityEngine.TextRenderingModule">
+          <HintPath>$(CorlibPath)\UnityEngine.TextRenderingModule.dll</HintPath>
+        </Reference>
         <Reference Include="UnityEngine.UI">
             <HintPath>$(CorlibPath)\UnityEngine.UI.dll</HintPath>
         </Reference>
     </ItemGroup>
     <ItemGroup>
-        <Compile Include="Managers\CreatureManager.cs" />
-        <Compile Include="Managers\ItemDataManager.cs" />
-        <Compile Include="Managers\ItemManager.cs" />
-        <Compile Include="Managers\LocalizationManager.cs" />
-        <Compile Include="Managers\LocationManager.cs" />
-        <Compile Include="Managers\PieceManager\MaterialReplacer.cs" />
-        <Compile Include="Managers\PieceManager\PieceManager.cs" />
-        <Compile Include="Managers\PieceManager\SnapPointMaker.cs" />
-        <Compile Include="Managers\SkillManager.cs" />
-        <Compile Include="Managers\StatusEffectManager.cs" />
-        <Compile Include="Plugin.cs" />
-        <Compile Include="Properties\AssemblyInfo.cs" />
-        <Compile Include="VersionHandshake.cs" />
+        <Compile Include="Managers\CreatureManager.cs"/>
+        <Compile Include="Managers\ItemDataManager.cs"/>
+        <Compile Include="Managers\ItemManager.cs"/>
+        <Compile Include="Managers\LocalizationManager.cs"/>
+        <Compile Include="Managers\LocationManager.cs"/>
+        <Compile Include="Managers\PieceManager\MaterialReplacer.cs"/>
+        <Compile Include="Managers\PieceManager\PieceManager.cs"/>
+        <Compile Include="Managers\PieceManager\SnapPointMaker.cs"/>
+        <Compile Include="Managers\SkillManager.cs"/>
+        <Compile Include="Managers\StatusEffectManager.cs"/>
+        <Compile Include="Plugin.cs"/>
+        <Compile Include="Properties\AssemblyInfo.cs"/>
+        <Compile Include="VersionHandshake.cs"/>
     </ItemGroup>
     <ItemGroup>
-        <None Include="App.config" />
+        <None Include="App.config"/>
     </ItemGroup>
     <ItemGroup>
-        <Content Include=".gitignore" />
-        <Content Include="assets\DropAssetBundleInThisFolder.txt" />
-        <Content Include="environment.props" />
-        <Content Include="icons\README.txt" />
-        <Content Include="ILRepack.targets" />
+        <Content Include=".gitignore"/>
+        <Content Include="assets\DropAssetBundleInThisFolder.txt"/>
+        <Content Include="environment.props"/>
+        <Content Include="icons\README.txt"/>
+        <Content Include="ILRepack.targets"/>
         <Content Include="Libs\CreatureManager.dll">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </Content>
-        <Content Include="Libs\ItemDataManager.dll" />
+        <Content Include="Libs\ItemDataManager.dll"/>
         <Content Include="Libs\ItemManager.dll">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </Content>
-        <Content Include="Libs\LocalizationManager.dll" />
+        <Content Include="Libs\LocalizationManager.dll"/>
         <Content Include="Libs\LocationManager.dll">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </Content>
@@ -155,19 +158,19 @@
         <Content Include="Libs\SkillManager.dll">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </Content>
-        <Content Include="LICENSE.md" />
-        <Content Include="README.md" />
-        <Content Include="Thunderstore\CHANGELOG.md" />
-        <Content Include="Thunderstore\icon.png" />
-        <Content Include="Thunderstore\manifest.json" />
-        <EmbeddedResource Include="translations\English.yml" />
-        <Content Include="UpdateManifest.ps1" />
+        <Content Include="LICENSE.md"/>
+        <Content Include="README.md"/>
+        <Content Include="Thunderstore\CHANGELOG.md"/>
+        <Content Include="Thunderstore\icon.png"/>
+        <Content Include="Thunderstore\manifest.json"/>
+        <EmbeddedResource Include="translations\English.yml"/>
+        <Content Include="UpdateManifest.ps1"/>
     </ItemGroup>
     <ItemGroup>
-      <PackageReference Include="ILRepack.Lib.MSBuild.Task" Version="2.0.18.2" />
-      <PackageReference Include="YamlDotNet" Version="13.1.0" />
+        <PackageReference Include="ILRepack.Lib.MSBuild.Task" Version="2.0.18.2"/>
+        <PackageReference Include="YamlDotNet" Version="13.2.0" />
     </ItemGroup>
-    <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+    <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets"/>
     <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
          Other similar extension points exist, see Microsoft.Common.targets.
     <Target Name="BeforeBuild">
@@ -176,18 +179,18 @@
     </Target>
     -->
 
-    <UsingTask AssemblyFile="KeyManager.dll" TaskName="KeyManager.Seal" Condition="'$(AfterTargets)' == 'KeyManager'" />
+    <UsingTask AssemblyFile="KeyManager.dll" TaskName="KeyManager.Seal" Condition="'$(AfterTargets)' == 'KeyManager'"/>
     <Target Name="KeyManager" AfterTargets="ILRepack" Condition="'$(AfterTargets)' == 'KeyManager'">
-        <Seal DLL="$(TargetPath)" />
+        <Seal DLL="$(TargetPath)"/>
     </Target>
     <Target Name="GetAssemblyVersion" AfterTargets="$(AfterTargets)">
         <GetAssemblyIdentity AssemblyFiles="$(TargetPath)">
-            <Output TaskParameter="Assemblies" ItemName="Targets" />
+            <Output TaskParameter="Assemblies" ItemName="Targets"/>
         </GetAssemblyIdentity>
         <ItemGroup>
-            <AssemblyVersions Include="@(Targets->'%(Version)')" />
+            <AssemblyVersions Include="@(Targets->'%(Version)')"/>
         </ItemGroup>
-        <Error Text="Failed to get Assembly Version." Condition="'%(AssemblyVersions.Identity)' == ''" />
+        <Error Text="Failed to get Assembly Version." Condition="'%(AssemblyVersions.Identity)' == ''"/>
         <PropertyGroup>
             <AssemblyVersion>%(AssemblyVersions.Identity)</AssemblyVersion>
             <Major>$(AssemblyVersion.Split('.')[0])</Major>
@@ -200,21 +203,21 @@
         </PropertyGroup>
     </Target>
     <Target Name="CopyOutputDLL" AfterTargets="GetAssemblyVersion">
-        <Error Text="DLL not found in target directory." Condition="!Exists('$(TargetDir)$(AssemblyName).dll')" />
-        <Copy SourceFiles="$(TargetDir)$(AssemblyName).dll" DestinationFolder="$(CopyOutputDLLPath)" OverwriteReadOnlyFiles="true" />
-        <Copy SourceFiles="$(TargetDir)$(AssemblyName).dll" DestinationFolder="$(CopyOutputDLLPath2)" OverwriteReadOnlyFiles="true" Condition="Exists('$(CopyOutputDLLPath2)')" />
-        <Copy SourceFiles="$(TargetDir)$(AssemblyName).dll" DestinationFolder="$(CopyOutputDLLPath3)" OverwriteReadOnlyFiles="true" Condition="Exists('$(CopyOutputDLLPath3)')" />
+        <Error Text="DLL not found in target directory." Condition="!Exists('$(TargetDir)$(AssemblyName).dll')"/>
+        <Copy SourceFiles="$(TargetDir)$(AssemblyName).dll" DestinationFolder="$(CopyOutputDLLPath)" OverwriteReadOnlyFiles="true"/>
+        <Copy SourceFiles="$(TargetDir)$(AssemblyName).dll" DestinationFolder="$(CopyOutputDLLPath2)" OverwriteReadOnlyFiles="true" Condition="Exists('$(CopyOutputDLLPath2)')"/>
+        <Copy SourceFiles="$(TargetDir)$(AssemblyName).dll" DestinationFolder="$(CopyOutputDLLPath3)" OverwriteReadOnlyFiles="true" Condition="Exists('$(CopyOutputDLLPath3)')"/>
     </Target>
     <Target Name="CopyReadMeToTSFolder" AfterTargets="CopyOutputDLL" Condition=" ('$(Configuration)|$(Platform)' == 'Release|AnyCPU') And ('$(OS)' == 'Windows_NT') ">
-        <Warning Text="README.md not found in project directory. A default README.md file will be created for the Thunderstore package" Condition="!Exists('README.md')" />
-        <WriteLinesToFile File="README.md" Lines="Default Readme file from one of Azumatt's Templates. Replace this with actual content." Overwrite="false" Condition="!Exists('README.md')" />
-        <Copy SourceFiles="README.md" DestinationFolder="$(PackageDir)" OverwriteReadOnlyFiles="true" />
-        <Copy SourceFiles="README.md" DestinationFolder="$(ProjectDir)\Thunderstore" OverwriteReadOnlyFiles="true" />
+        <Warning Text="README.md not found in project directory. A default README.md file will be created for the Thunderstore package" Condition="!Exists('README.md')"/>
+        <WriteLinesToFile File="README.md" Lines="Default Readme file from one of Azumatt's Templates. Replace this with actual content." Overwrite="false" Condition="!Exists('README.md')"/>
+        <Copy SourceFiles="README.md" DestinationFolder="$(PackageDir)" OverwriteReadOnlyFiles="true"/>
+        <Copy SourceFiles="README.md" DestinationFolder="$(ProjectDir)\Thunderstore" OverwriteReadOnlyFiles="true"/>
     </Target>
     <UsingTask TaskName="WriteManifestFile" TaskFactory="CodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.v4.0.dll">
         <ParameterGroup>
-            <ManifestFile ParameterType="System.String" Required="true" />
-            <AssemblyName ParameterType="System.String" Required="true" />
+            <ManifestFile ParameterType="System.String" Required="true"/>
+            <AssemblyName ParameterType="System.String" Required="true"/>
         </ParameterGroup>
         <Task>
             <Code Type="Fragment" Language="cs">
@@ -238,37 +241,37 @@ System.IO.File.WriteAllText(ManifestFile, content);
         </Task>
     </UsingTask>
     <Target Name="UpdateManifestVersion" AfterTargets="CopyReadmeToTSFolder" Condition=" ('$(Configuration)|$(Platform)' == 'Release|AnyCPU') And ('$(OS)' == 'Windows_NT') ">
-        <WriteManifestFile ManifestFile="$(ProjectDir)Thunderstore\manifest.json" AssemblyName="$(AssemblyName)" />
+        <WriteManifestFile ManifestFile="$(ProjectDir)Thunderstore\manifest.json" AssemblyName="$(AssemblyName)"/>
         <ItemGroup>
-            <ManifestFile Include="$(ProjectDir)Thunderstore\manifest.json" />
+            <ManifestFile Include="$(ProjectDir)Thunderstore\manifest.json"/>
         </ItemGroup>
-        <Message Text="ManifestFile is @(ManifestFile)" />
-        <Message Text="Updating version number in Thunderstore\manifest.json" Condition="Exists(@(ManifestFile))" />
-        <Exec Command="powershell.exe -ExecutionPolicy Bypass -Command &quot;&amp; { &amp; '$(ProjectDir)UpdateManifest.ps1' -manifestFile '@(ManifestFile)' -versionString '$(PackageVersion)' }&quot;" />
+        <Message Text="ManifestFile is @(ManifestFile)"/>
+        <Message Text="Updating version number in Thunderstore\manifest.json" Condition="Exists(@(ManifestFile))"/>
+        <Exec Command="powershell.exe -ExecutionPolicy Bypass -Command &quot;&amp; { &amp; '$(ProjectDir)UpdateManifest.ps1' -manifestFile '@(ManifestFile)' -versionString '$(PackageVersion)' }&quot;"/>
     </Target>
     <Target Name="MakeThunderstorePackage" AfterTargets="UpdateManifestVersion" Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
-        <Error Text="manifest.json not found in Thunderstore directory." Condition="!Exists('$(ProjectDir)\Thunderstore\manifest.json')" />
-        <Error Text="icon.png not found in Thunderstore directory. Please note that Thunderstore requires this image to be 256x256 in dimension" Condition="!Exists('$(ProjectDir)\Thunderstore\icon.png')" />
+        <Error Text="manifest.json not found in Thunderstore directory." Condition="!Exists('$(ProjectDir)\Thunderstore\manifest.json')"/>
+        <Error Text="icon.png not found in Thunderstore directory. Please note that Thunderstore requires this image to be 256x256 in dimension" Condition="!Exists('$(ProjectDir)\Thunderstore\icon.png')"/>
         <ItemGroup>
-            <PackageFiles Include="$(TargetDir)$(AssemblyName).dll" Condition="Exists('$(TargetDir)$(AssemblyName).dll')" />
-            <PackageFiles Include="$(ProjectDir)\Thunderstore\CHANGELOG.md" Condition="Exists('$(ProjectDir)\Thunderstore\CHANGELOG.md')" />
-            <PackageFiles Include="$(ProjectDir)\Thunderstore\manifest.json" Condition="Exists('$(ProjectDir)\Thunderstore\manifest.json')" />
-            <PackageFiles Include="$(ProjectDir)\Thunderstore\icon.png" Condition="Exists('$(ProjectDir)\Thunderstore\icon.png')" />
+            <PackageFiles Include="$(TargetDir)$(AssemblyName).dll" Condition="Exists('$(TargetDir)$(AssemblyName).dll')"/>
+            <PackageFiles Include="$(ProjectDir)\Thunderstore\CHANGELOG.md" Condition="Exists('$(ProjectDir)\Thunderstore\CHANGELOG.md')"/>
+            <PackageFiles Include="$(ProjectDir)\Thunderstore\manifest.json" Condition="Exists('$(ProjectDir)\Thunderstore\manifest.json')"/>
+            <PackageFiles Include="$(ProjectDir)\Thunderstore\icon.png" Condition="Exists('$(ProjectDir)\Thunderstore\icon.png')"/>
         </ItemGroup>
-        <MakeDir Directories="$(PackageDir)" />
-        <Copy SourceFiles="@(PackageFiles)" DestinationFolder="$(PackageDir)" />
-        <ZipDirectory SourceDirectory="$(PackageDir)" DestinationFile="Thunderstore\$(PackageName).zip" Overwrite="true" />
-        <RemoveDir Directories="$(PackageDir)" />
+        <MakeDir Directories="$(PackageDir)"/>
+        <Copy SourceFiles="@(PackageFiles)" DestinationFolder="$(PackageDir)"/>
+        <ZipDirectory SourceDirectory="$(PackageDir)" DestinationFile="Thunderstore\$(PackageName).zip" Overwrite="true"/>
+        <RemoveDir Directories="$(PackageDir)"/>
     </Target>
     <Target Name="MakeNexusPackage" AfterTargets="MakeThunderstorePackage" Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
-        <MakeDir Directories="$(ProjectDir)\Nexus" />
+        <MakeDir Directories="$(ProjectDir)\Nexus"/>
         <ItemGroup>
-            <NexusPackageFiles Include="$(TargetDir)$(AssemblyName).dll;" />
+            <NexusPackageFiles Include="$(TargetDir)$(AssemblyName).dll;"/>
         </ItemGroup>
-        <MakeDir Directories="$(PackageDir)" />
-        <Copy SourceFiles="@(NexusPackageFiles)" DestinationFolder="$(PackageDir)" />
-        <ZipDirectory SourceDirectory="$(PackageDir)" DestinationFile="Nexus\$(PackageName).zip" Overwrite="true" />
-        <RemoveDir Directories="$(PackageDir)" />
+        <MakeDir Directories="$(PackageDir)"/>
+        <Copy SourceFiles="@(NexusPackageFiles)" DestinationFolder="$(PackageDir)"/>
+        <ZipDirectory SourceDirectory="$(PackageDir)" DestinationFile="Nexus\$(PackageName).zip" Overwrite="true"/>
+        <RemoveDir Directories="$(PackageDir)"/>
     </Target>
 
 </Project>
