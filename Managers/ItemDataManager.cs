@@ -39,11 +39,12 @@ public abstract class ItemData
 	}
 
 	public bool IsCloned => Info.isCloned.Contains(CustomDataKey);
-	public bool IsAlive => info.TryGetTarget(out _);
+	public bool IsAlive => (info ?? constructingInfo).TryGetTarget(out _);
 
 	public ItemDrop.ItemData Item => Info.ItemData;
-	internal WeakReference<ItemInfo> info = null!;
-	public ItemInfo Info => info.TryGetTarget(out ItemInfo itemInfo) ? itemInfo : new ItemInfo(new ItemDrop.ItemData());
+	internal static WeakReference<ItemInfo> constructingInfo = null!;
+	internal WeakReference<ItemInfo>? info;
+	public ItemInfo Info => (info ?? constructingInfo).TryGetTarget(out ItemInfo itemInfo) ? itemInfo : new ItemInfo(new ItemDrop.ItemData());
 
 	public virtual void FirstLoad() { }
 	public virtual void Load() { }
@@ -170,7 +171,8 @@ public class ItemInfo : IEnumerable<ItemData>
 		}
 
 		ItemData.m_customData[fullKey] = "";
-		T obj = new() { info = selfReference ??= new WeakReference<ItemInfo>(this), Key = key };
+		ItemDataManager.ItemData.constructingInfo = selfReference ??= new WeakReference<ItemInfo>(this); 
+		T obj = new() { info = selfReference, Key = key };
 		data[compoundKey] = obj;
 		obj.Value = ""; // initial Store
 		obj.FirstLoad();
@@ -241,9 +243,10 @@ public class ItemInfo : IEnumerable<ItemData>
 			return null;
 		}
 
+		ItemDataManager.ItemData.constructingInfo = selfReference ??= new WeakReference<ItemInfo>(this); 
 		ItemData obj = (ItemData)Activator.CreateInstance(type);
 		data[key] = obj;
-		obj.info = selfReference ?? new WeakReference<ItemInfo>(this);
+		obj.info = selfReference;
 		obj.Key = keyParts.Length > 1 ? keyParts[1] : "";
 		obj.Load();
 
@@ -447,7 +450,7 @@ public class ItemInfo : IEnumerable<ItemData>
 					{ OpCodes.Stloc_1, OpCodes.Ldloc_1 },
 					{ OpCodes.Stloc_2, OpCodes.Ldloc_2 },
 					{ OpCodes.Stloc_3, OpCodes.Ldloc_3 },
-					{ OpCodes.Stloc_S, OpCodes.Ldloc_S }
+					{ OpCodes.Stloc_S, OpCodes.Ldloc_S },
 				}[loadingInstruction.opcode];
 			}
 			if (instructions[i] == lastBranch)
@@ -609,17 +612,18 @@ public class ItemInfo : IEnumerable<ItemData>
 		if (currentlyUpgradingItem is not null)
 		{
 			item.m_itemData.m_customData = currentlyUpgradingItem.m_customData;
-			if (ItemExtensions.itemInfo.TryGetValue(item.m_itemData, out ItemInfo info))
+			ItemInfo info = currentlyUpgradingItem.Data();
+			ItemExtensions.itemInfo.Remove(currentlyUpgradingItem);
+			ItemExtensions.itemInfo.Add(item.m_itemData, info);
+
+			item.m_itemData.m_quality = currentlyUpgradingItem.m_quality + 1;
+			item.m_itemData.m_variant = currentlyUpgradingItem.m_variant;
+			info.ItemData = item.m_itemData;
+			info.LoadAll();
+
+			foreach (ItemData itemData in info.data.Values)
 			{
-				info.ItemData = item.m_itemData;
-
-				ItemExtensions.itemInfo.Remove(currentlyUpgradingItem);
-				ItemExtensions.itemInfo.Add(item.m_itemData, info);
-
-				foreach (ItemData itemData in info.data.Values)
-				{
-					itemData.Upgraded();
-				}
+				itemData.Upgraded();
 			}
 			currentlyUpgradingItem = null;
 		}
@@ -686,7 +690,7 @@ public class ItemInfo : IEnumerable<ItemData>
 		}
 		// Note: Inventory load implicitly handled by ItemData.Clone() handling within AddItem
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(Player), nameof(Player.Load)), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(RegisterForceLoadedTypesOnPlayerLoaded)), Priority.VeryHigh));
-		harmony.Patch(AccessTools.DeclaredMethod(typeof(Inventory), nameof(Inventory.AddItem), new[] { typeof(string), typeof(int), typeof(int), typeof(int), typeof(long), typeof(string) }), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(RegisterForceLoadedTypesAddItem)), Priority.First));
+		harmony.Patch(AccessTools.DeclaredMethod(typeof(Inventory), nameof(Inventory.AddItem), new[] { typeof(string), typeof(int), typeof(int), typeof(int), typeof(long), typeof(string), typeof(bool) }), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(RegisterForceLoadedTypesAddItem)), Priority.First));
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(ItemDrop), nameof(ItemDrop.Awake)), transpiler: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(ImportCustomDataOnUpgrade)), Priority.First), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(ItemDropAwake)), Priority.First));
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(ItemDrop), nameof(ItemDrop.Awake)), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(ItemDropAwakeDelayed)), Priority.First - 1));
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(ItemDrop.ItemData), nameof(ItemDrop.ItemData.Clone)), prefix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(ItemDataClonePrefix))), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(ItemDataClonePostfix)), Priority.HigherThanNormal));
@@ -739,7 +743,7 @@ public class ForeignItemInfo : IEnumerable<object>
 					call = call.MakeGenericMethod(generic);
 				}
 
-				call.Invoke(foreignItemInfo, values);
+				return call.Invoke(foreignItemInfo, values);
 			}
 		}
 		return null;
@@ -793,7 +797,7 @@ public static class ItemExtensions
 			return null;
 		}
 
-		if (plugin.Instance.GetType().Assembly.GetType(typeof(ItemExtensions).FullName)?.GetMethod(nameof(Data), BindingFlags.Static | BindingFlags.Public, null, new[] { typeof(ItemDrop.ItemData) }, Array.Empty<ParameterModifier>())?.Invoke(null, new object[] { item }) is { } foreignItemData)
+		if (plugin.Instance.GetType().Assembly.GetType(typeof(ItemExtensions).FullName!)?.GetMethod(nameof(Data), BindingFlags.Static | BindingFlags.Public, null, new[] { typeof(ItemDrop.ItemData) }, Array.Empty<ParameterModifier>())?.Invoke(null, new object[] { item }) is { } foreignItemData)
 		{
 			return foreignInfos[mod] = new ForeignItemInfo(item, foreignItemData);
 		}
