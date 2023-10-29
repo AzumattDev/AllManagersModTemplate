@@ -623,7 +623,7 @@ public class Item
 							}
 						}
 
-						conversion.config.input = config(englishName, $"{prefix}Conversion Input Item", conversion.Input, new ConfigDescription($"Duration of conversion to create {englishName}", null, new ConfigurationManagerAttributes { Category = localizedName, Browsable = (item.configurationVisible & Configurability.Recipe) != 0 }));
+						conversion.config.input = config(englishName, $"{prefix}Conversion Input Item", conversion.Input, new ConfigDescription($"Input item to create {englishName}", null, new ConfigurationManagerAttributes { Category = localizedName, Browsable = (item.configurationVisible & Configurability.Recipe) != 0 }));
 						conversion.config.input.SettingChanged += (_, _) =>
 						{
 							if (index < item.conversions.Count && ObjectDB.instance is { } objectDB)
@@ -633,9 +633,9 @@ public class Item
 								UpdatePiece();
 							}
 						};
-						conversion.config.piece = config(englishName, $"{prefix}Conversion Piece", conversion.Piece, new ConfigDescription($"Duration of conversion to create {englishName}", null, new ConfigurationManagerAttributes { Category = localizedName, Browsable = (item.configurationVisible & Configurability.Recipe) != 0 }));
+						conversion.config.piece = config(englishName, $"{prefix}Conversion Piece", conversion.Piece, new ConfigDescription($"Conversion piece used to create {englishName}", null, new ConfigurationManagerAttributes { Category = localizedName, Browsable = (item.configurationVisible & Configurability.Recipe) != 0 }));
 						conversion.config.piece.SettingChanged += (_, _) => UpdatePiece();
-						conversion.config.customPiece = config(englishName, $"{prefix}Conversion Custom Piece", conversion.customPiece ?? "", new ConfigDescription($"Duration of conversion to create {englishName}", null, new ConfigurationManagerAttributes { Category = localizedName, Browsable = (item.configurationVisible & Configurability.Recipe) != 0 }));
+						conversion.config.customPiece = config(englishName, $"{prefix}Conversion Custom Piece", conversion.customPiece ?? "", new ConfigDescription($"Custom conversion piece to create {englishName}", null, new ConfigurationManagerAttributes { Category = localizedName, Browsable = (item.configurationVisible & Configurability.Recipe) != 0 }));
 						conversion.config.customPiece.SettingChanged += (_, _) => UpdatePiece();
 					}
 				}
@@ -961,7 +961,7 @@ public class Item
 				Recipe recipe = ScriptableObject.CreateInstance<Recipe>();
 				recipe.name = $"{Prefab.name}_Recipe_{station.Table.ToString()}";
 				recipe.m_amount = kv.Value.CraftAmount;
-				recipe.m_enabled = cfg?.table.Value != CraftingTable.Disabled;
+				recipe.m_enabled = cfg is null ? (int)(kv.Value.RecipeIsActive?.BoxedValue ?? 1) != 0 : cfg.table.Value != CraftingTable.Disabled;
 				recipe.m_item = Prefab.GetComponent<ItemDrop>();
 				recipe.m_resources = SerializedRequirements.toPieceReqs(objectDB, cfg?.craft == null ? new SerializedRequirements(kv.Value.RequiredItems.Requirements) : new SerializedRequirements(cfg.craft.Value), cfg?.upgrade == null ? new SerializedRequirements(kv.Value.RequiredUpgradeItems.Requirements) : new SerializedRequirements(cfg.upgrade.Value));
 				if ((cfg == null || recipes.Count > 0 ? station.Table : cfg.table.Value) is CraftingTable.Inventory or CraftingTable.Disabled)
@@ -986,7 +986,6 @@ public class Item
 				recipe.m_minStationLevel = cfg == null || recipes.Count > 0 ? station.level : cfg.tableLevel.Value;
 				recipe.m_requireOnlyOneIngredient = cfg == null ? kv.Value.RequireOnlyOneIngredient : cfg.requireOneIngredient.Value == Toggle.On;
 				recipe.m_qualityResultAmountMultiplier = cfg?.qualityResultAmountMultiplier.Value ?? kv.Value.QualityResultAmountMultiplier;
-				recipe.m_enabled = (int)(kv.Value.RecipeIsActive?.BoxedValue ?? 1) != 0;
 
 				recipes.Add(recipe);
 				if (kv.Value.RequiredItems is { Free: false, Requirements.Count: 0 })

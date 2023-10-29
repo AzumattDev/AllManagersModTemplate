@@ -2,7 +2,7 @@
     <PropertyGroup>
         <ValheimGamePath>C:\Program Files (x86)\Steam\steamapps\common\Valheim</ValheimGamePath>
         <BepInExPath>$(ValheimGamePath)\BepInEx</BepInExPath>
-        <CorlibPath>$(ValheimGamePath)\unstripped_corlib</CorlibPath>
+        <CorlibPath>$(ValheimGamePath)\valheim_Data\Managed</CorlibPath>
         <PublicizedAssembliesPath>$(ValheimGamePath)\valheim_Data\Managed\publicized_assemblies</PublicizedAssembliesPath>
         <CopyOutputDLLPath>$(ValheimGamePath)\BepInEx\plugins</CopyOutputDLLPath> <!-- This is where the output DLL will be copied to after building. The templates support doing this for up to three locations. Duplicate this line and append a number. Example below -->
         <!--<CopyOutputDLLPath2>$(ValheimGamePath)\BepInEx\plugins</CopyOutputDLLPath2>-->
