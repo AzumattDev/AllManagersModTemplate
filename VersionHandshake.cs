@@ -21,7 +21,6 @@ namespace AllManagersModTemplate
             AllManagersModTemplatePlugin.AllManagersModTemplateLogger.LogDebug("Invoking version check");
             ZPackage zpackage = new();
             zpackage.Write(AllManagersModTemplatePlugin.ModVersion);
-            zpackage.Write(RpcHandlers.ComputeHashForMod().Replace("-", ""));
             peer.m_rpc.Invoke($"{AllManagersModTemplatePlugin.ModName}_VersionCheck", zpackage);
         }
     }
@@ -66,8 +65,7 @@ namespace AllManagersModTemplate
         {
             if (!__instance.IsServer()) return;
             // Remove peer from validated list
-            AllManagersModTemplatePlugin.AllManagersModTemplateLogger.LogInfo(
-                $"Peer ({peer.m_rpc.m_socket.GetHostName()}) disconnected, removing from validated list");
+            AllManagersModTemplatePlugin.AllManagersModTemplateLogger.LogInfo($"Peer ({peer.m_rpc.m_socket.GetHostName()}) disconnected, removing from validated list");
             _ = RpcHandlers.ValidatedPeers.Remove(peer.m_rpc);
         }
     }
@@ -79,15 +77,13 @@ namespace AllManagersModTemplate
         public static void RPC_AllManagersModTemplate_Version(ZRpc rpc, ZPackage pkg)
         {
             string? version = pkg.ReadString();
-            string? hash = pkg.ReadString();
 
-            var hashForAssembly = ComputeHashForMod().Replace("-", "");
             AllManagersModTemplatePlugin.AllManagersModTemplateLogger.LogInfo("Version check, local: " +
                                                                               AllManagersModTemplatePlugin.ModVersion +
                                                                               ",  remote: " + version);
-            if (hash != hashForAssembly || version != AllManagersModTemplatePlugin.ModVersion)
+            if (version != AllManagersModTemplatePlugin.ModVersion)
             {
-                AllManagersModTemplatePlugin.ConnectionError = $"{AllManagersModTemplatePlugin.ModName} Installed: {AllManagersModTemplatePlugin.ModVersion} {hashForAssembly}\n Needed: {version} {hash}";
+                AllManagersModTemplatePlugin.ConnectionError = $"{AllManagersModTemplatePlugin.ModName} Installed: {AllManagersModTemplatePlugin.ModVersion}\n Needed: {version}";
                 if (!ZNet.instance.IsServer()) return;
                 // Different versions - force disconnect client from server
                 AllManagersModTemplatePlugin.AllManagersModTemplateLogger.LogWarning($"Peer ({rpc.m_socket.GetHostName()}) has incompatible version, disconnecting...");
@@ -109,21 +105,6 @@ namespace AllManagersModTemplate
                     ValidatedPeers.Add(rpc);
                 }
             }
-        }
-
-        public static string ComputeHashForMod()
-        {
-            using SHA256 sha256Hash = SHA256.Create();
-            // ComputeHash - returns byte array  
-            byte[] bytes = sha256Hash.ComputeHash(File.ReadAllBytes(Assembly.GetExecutingAssembly().Location));
-            // Convert byte array to a string   
-            StringBuilder builder = new();
-            foreach (byte b in bytes)
-            {
-                builder.Append(b.ToString("X2"));
-            }
-
-            return builder.ToString();
         }
     }
 }
