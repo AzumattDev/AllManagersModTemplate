@@ -411,7 +411,13 @@ public class Item
 
 	private delegate void setDmgFunc(ref HitData.DamageTypes dmg, float value);
 
-	internal static void reloadConfigDisplay() => configManager?.GetType().GetMethod("BuildSettingList")!.Invoke(configManager, Array.Empty<object>());
+	internal static void reloadConfigDisplay()
+	{
+		if (configManager?.GetType().GetProperty("DisplayingWindow")!.GetValue(configManager) is true)
+		{
+			configManager.GetType().GetMethod("BuildSettingList")!.Invoke(configManager, Array.Empty<object>());
+		}
+	}
 
 	private void UpdateItemTableConfig(string recipeKey, CraftingTable table, string customTableValue)
 	{

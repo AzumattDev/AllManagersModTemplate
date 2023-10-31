@@ -14,7 +14,7 @@ using HarmonyLib;
 using JetBrains.Annotations;
 using TMPro;
 using UnityEngine;
-using UnityEngine.UI;
+using Debug = UnityEngine.Debug;
 using Object = UnityEngine.Object;
 
 namespace PieceManager;
@@ -30,7 +30,7 @@ public enum CraftingTable
     [InternalName("piece_stonecutter")] StoneCutter,
     [InternalName("piece_magetable")] MageTable,
     [InternalName("blackforge")] BlackForge,
-    Custom
+    Custom,
 }
 
 public class InternalName : Attribute
@@ -84,7 +84,7 @@ public enum BuildPieceCategory
     Building = 2,
     Furniture = 3,
     All = 100,
-    Custom = 99
+    Custom = 99,
 }
 
 [PublicAPI]
@@ -267,8 +267,13 @@ public class BuildPiece
             ? null
             : BepInEx.Bootstrap.Chainloader.ManagerObject.GetComponent(configManagerType);
 
-        void ReloadConfigDisplay() =>
-            configManagerType?.GetMethod("BuildSettingList")!.Invoke(configManager, Array.Empty<object>());
+        void ReloadConfigDisplay()
+        {
+            if (configManagerType?.GetProperty("DisplayingWindow")!.GetValue(configManager) is true)
+            {
+                configManagerType.GetMethod("BuildSettingList")!.Invoke(configManager, Array.Empty<object>());
+            }
+        }
 
         foreach (BuildPiece piece in registeredPieces)
         {
@@ -297,7 +302,7 @@ public class BuildPiece
                 ConfigurationManagerAttributes customTableAttributes = new()
                 {
                     Order = --order, Browsable = cfg.category.Value == BuildPieceCategory.Custom,
-                    Category = localizedName
+                    Category = localizedName,
                 };
                 cfg.customCategory = config(englishName, "Custom Build Category",
                     piece.Category.custom,
@@ -508,7 +513,7 @@ public class BuildPiece
                         Piece.Requirement[] requirements =
                             SerializedRequirements.toPieceReqs(new SerializedRequirements(cfg.craft.Value));
                         piecePrefab.m_resources = requirements;
-                        foreach (Piece instantiatedPiece in UnityEngine.Object.FindObjectsOfType<Piece>())
+                        foreach (Piece instantiatedPiece in Object.FindObjectsOfType<Piece>())
                         {
                             if (instantiatedPiece.m_name == pieceName)
                             {
@@ -1296,10 +1301,10 @@ public static class PiecePrefabManager
     {
         GameObject prefab = assets.LoadAsset<GameObject>(prefabName);
 
-       //foreach (GameObject gameObject in FixRefs(assets))
-       //{
-       //    MaterialReplacer.RegisterGameObjectForShaderSwap(gameObject, MaterialReplacer.ShaderType.UseUnityShader);
-       //}
+        //foreach (GameObject gameObject in FixRefs(assets))
+        //{
+        //    MaterialReplacer.RegisterGameObjectForShaderSwap(gameObject, MaterialReplacer.ShaderType.UseUnityShader);
+        //}
 
         piecePrefabs.Add(prefab);
 
@@ -1550,7 +1555,7 @@ public static class PiecePrefabManager
             }
         }
 
-        RectTransform? background = (RectTransform)selectionWindow.Find("Bkg2")?.transform!;
+        RectTransform background = (RectTransform)selectionWindow.Find("Bkg2")?.transform!;
 
         if (background)
         {

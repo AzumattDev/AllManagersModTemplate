@@ -18,7 +18,7 @@ namespace CreatureManager;
 public enum Toggle
 {
 	On,
-	Off
+	Off,
 }
 
 [PublicAPI]
@@ -31,7 +31,7 @@ public enum GlobalKey
 	[InternalName("defeated_dragon")] KilledModer,
 	[InternalName("defeated_eikthyr")] KilledEikthyr,
 	[InternalName("KilledTroll")] KilledTroll,
-	[InternalName("killed_surtling")] KilledSurtling
+	[InternalName("killed_surtling")] KilledSurtling,
 }
 
 [Flags] [PublicAPI]
@@ -60,7 +60,7 @@ public enum Weather
 	[InternalName("Moder")] ModersVortex = 1 << 20,
 	[InternalName("GoblinKing")] YagluthsMagicBlizzard = 1 << 21,
 	[InternalName("Crypt")] Crypt = 1 << 22,
-	[InternalName("SunkenCrypt")] SunkenCrypt = 1 << 23
+	[InternalName("SunkenCrypt")] SunkenCrypt = 1 << 23,
 }
 
 public class InternalName : Attribute
@@ -73,35 +73,35 @@ public enum DropOption
 {
 	Disabled,
 	Default,
-	Custom
+	Custom,
 }
 
 public enum SpawnOption
 {
 	Disabled,
 	Default,
-	Custom
+	Custom,
 }
 
 public enum SpawnTime
 {
 	Day,
 	Night,
-	Always
+	Always,
 }
 
 public enum SpawnArea
 {
 	Center,
 	Edge,
-	Everywhere
+	Everywhere,
 }
 
 public enum Forest
 {
 	Yes,
 	No,
-	Both
+	Both,
 }
 
 [PublicAPI]
@@ -190,7 +190,7 @@ public class Creature
 			{
 				DropOption.Custom => new SerializedDrops(creatureConfigs[creature].CustomDrops.get()).Drops,
 				DropOption.Disabled => new List<KeyValuePair<string, Drop>>(),
-				_ => creature.Drops.drops!.ToList()
+				_ => creature.Drops.drops!.ToList(),
 			}).Select(kv =>
 			{
 				if (kv.Key == "" || ZNetScene.instance is null)
@@ -209,7 +209,7 @@ public class Creature
 					m_amountMax = (int)kv.Value.Amount.max,
 					m_chance = kv.Value.DropChance / 100,
 					m_onePerPlayer = kv.Value.DropOnePerPlayer,
-					m_levelMultiplier = kv.Value.MultiplyDropByLevel
+					m_levelMultiplier = kv.Value.MultiplyDropByLevel,
 				};
 			}).Where(d => d != null).ToList();
 		}
@@ -251,7 +251,7 @@ public class Creature
 						Amount = amount,
 						DropChance = parts.Length > 2 && float.TryParse(parts[2], out float chance) ? chance : 100,
 						DropOnePerPlayer = parts.Length > 3 && parts[3] == "onePerPlayer",
-						MultiplyDropByLevel = parts.Length > 4 && parts[4] == "multiplyByLevel"
+						MultiplyDropByLevel = parts.Length > 4 && parts[4] == "multiplyByLevel",
 					};
 				}).ToList();
 			}
@@ -355,8 +355,14 @@ public class Creature
 		Type? configManagerType = bepinexConfigManager?.GetType("ConfigurationManager.ConfigurationManager");
 		configManager = configManagerType == null ? null : BepInEx.Bootstrap.Chainloader.ManagerObject.GetComponent(configManagerType);
 
-		void reloadConfigDisplay() => configManagerType?.GetMethod("BuildSettingList")!.Invoke(configManager, Array.Empty<object>());
-
+		static void reloadConfigDisplay()
+		{
+			if (configManager?.GetType().GetProperty("DisplayingWindow")!.GetValue(configManager) is true)
+			{
+				configManager.GetType().GetMethod("BuildSettingList")!.Invoke(configManager, Array.Empty<object>());
+			}
+		}
+		
 		if (!TomlTypeConverter.CanConvert(typeof(Range)))
 		{
 			TomlTypeConverter.AddConverter(typeof(Range), new TypeConverter
@@ -370,7 +376,7 @@ public class Creature
 				{
 					Range range = (Range)obj;
 					return $"{range.min} - {range.max}";
-				}
+				},
 			});
 		}
 
@@ -585,7 +591,7 @@ public class Creature
 					Amount = new Range(minAmount, maxAmount),
 					DropChance = chance,
 					MultiplyDropByLevel = multiplyPerLevel,
-					DropOnePerPlayer = perPlayer
+					DropOnePerPlayer = perPlayer,
 				};
 				newDrops.Add(new KeyValuePair<string, Drop>(itemName, newDrop));
 			}
@@ -656,7 +662,7 @@ public class Creature
 		{
 			SpawnArea.Center => Heightmap.BiomeArea.Median,
 			SpawnArea.Edge => Heightmap.BiomeArea.Edge,
-			_ => Heightmap.BiomeArea.Everything
+			_ => Heightmap.BiomeArea.Everything,
 		};
 		spawnData.m_maxSpawned = cfg.Maximum.get();
 		spawnData.m_spawnInterval = cfg.CheckSpawnInterval.get();
@@ -694,7 +700,7 @@ public class Creature
 			SpawnSystem.SpawnData spawnData = new()
 			{
 				m_name = creature.Prefab.name,
-				m_prefab = creature.Prefab
+				m_prefab = creature.Prefab,
 			};
 			creature.updateSpawnData(spawnData);
 			lastRegisteredSpawns.Add(spawnData);
