@@ -293,7 +293,7 @@ namespace AllManagersModTemplate
             heroShield.Snapshot(); // I don't have an icon for this item in my asset bundle, so I will let the ItemManager generate one automatically
             // The icon for the item will have the same rotation as the item in unity
 			
-            _ = new Conversion(heroBlade) // For some reason, we want to be able to put a hero shield into a smelter, to get a hero blade
+            _ = new ItemManager.Conversion(heroBlade) // For some reason, we want to be able to put a hero shield into a smelter, to get a hero blade
             {
                 Input = "HeroShield",
                 Piece = ConversionPiece.Smelter

@@ -153,6 +153,8 @@ public class BuildPiece
 
     internal static readonly List<BuildPiece> registeredPieces = new();
     internal static Dictionary<BuildPiece, PieceConfig> pieceConfigs = new();
+    internal List<Conversion> Conversions = new();
+    internal List<Smelter.ItemConversion> conversions = new();
 
     [Description(
         "Disables generation of the configs for your pieces. This is global, this turns it off for all pieces in your mod.")]
@@ -179,6 +181,9 @@ public class BuildPiece
 
     [Description("Change the extended/special properties of your build piece.")]
     public SpecialProperties SpecialProperties;
+
+    [Description("Specifies a config entry which toggles whether a recipe is active.")]
+    public ConfigEntryBase? RecipeIsActive = null;
 
     private LocalizeKey? _name;
 
@@ -522,12 +527,50 @@ public class BuildPiece
                         }
                     }
                 };
+
+                for (int i = 0; i < piece.Conversions.Count; ++i)
+                {
+                    string prefix = piece.Conversions.Count > 1 ? $"{i + 1}. " : "";
+                    Conversion conversion = piece.Conversions[i];
+                    conversion.config = new Conversion.ConversionConfig();
+                    int index = i;
+
+                    conversion.config.input = config(englishName, $"{prefix}Conversion Input Item", conversion.Input, new ConfigDescription($"Conversion input item within {englishName}", null, new ConfigurationManagerAttributes { Category = localizedName }));
+                    conversion.config.input.SettingChanged += (_, _) =>
+                    {
+                        if (index < piece.conversions.Count && ObjectDB.instance is { } objectDB)
+                        {
+                            ItemDrop? inputItem = SerializedRequirements.fetchByName(objectDB, conversion.config.input.Value);
+                            piece.conversions[index].m_from = inputItem;
+                        }
+                    };
+                    conversion.config.output = config(englishName, $"{prefix}Conversion Output Item", conversion.Output, new ConfigDescription($"Conversion output item within {englishName}", null, new ConfigurationManagerAttributes { Category = localizedName }));
+                    conversion.config.output.SettingChanged += (_, _) =>
+                    {
+                        if (index < piece.conversions.Count && ObjectDB.instance is { } objectDB)
+                        {
+                            ItemDrop? outputItem = SerializedRequirements.fetchByName(objectDB, conversion.config.output.Value);
+                            piece.conversions[index].m_to = outputItem;
+                        }
+                    };
+                }
+
+                if (SaveOnConfigSet)
+                {
+                    plugin.Config.SaveOnConfigSet = true;
+                    plugin.Config.Save();
+                }
             }
 
-            if (SaveOnConfigSet)
+            foreach (BuildPiece piece in registeredPieces)
             {
-                plugin.Config.SaveOnConfigSet = true;
-                plugin.Config.Save();
+                if (piece.RecipeIsActive is { } enabledCfg)
+                {
+                    Piece piecePrefab = piece.Prefab.GetComponent<Piece>();
+                    void ConfigChanged(object? o, EventArgs? e) => piecePrefab.m_enabled = (int)enabledCfg.BoxedValue != 0;
+                    ConfigChanged(null, null);
+                    enabledCfg.GetType().GetEvent(nameof(ConfigEntry<int>.SettingChanged)).AddEventHandler(enabledCfg, new EventHandler(ConfigChanged));
+                }
             }
         }
     }
@@ -623,6 +666,20 @@ public class BuildPiece
 
                         break;
                     }
+                }
+            }
+            piece.conversions = new List<Smelter.ItemConversion>();
+            for (int i = 0; i < piece.Conversions.Count; ++i)
+            {
+                Conversion conversion = piece.Conversions[i];
+                piece.conversions.Add(new Smelter.ItemConversion
+                {
+                    m_from = SerializedRequirements.fetchByName(ObjectDB.instance, conversion.config?.input.Value ?? conversion.Input),
+                    m_to = SerializedRequirements.fetchByName(ObjectDB.instance, conversion.config?.output.Value ?? conversion.Output),
+                });
+                if (piece.conversions[i].m_from is not null && piece.conversions[i].m_to is not null)
+                {
+                    piece.Prefab.GetComponent<Smelter>().m_conversion.Add(piece.conversions[i]);
                 }
             }
         }
@@ -805,18 +862,19 @@ public class BuildPiece
             return string.Join(",", Reqs.Select(r => $"{r.itemName}:{r.amount}:{r.recover}"));
         }
 
+        public static ItemDrop? fetchByName(ObjectDB objectDB, string name)
+        {
+            ItemDrop? item = objectDB.GetItemPrefab(name)?.GetComponent<ItemDrop>();
+            if (item == null)
+            {
+                Debug.LogWarning($"{(!string.IsNullOrWhiteSpace(plugin.name) ? $"[{plugin.name}]" : "")} The required item '{name}' does not exist.");
+            }
+            return item;
+        }
+
         public static Piece.Requirement[] toPieceReqs(SerializedRequirements craft)
         {
-            ItemDrop? ResItem(Requirement r)
-            {
-                ItemDrop? item = ObjectDB.instance.GetItemPrefab(r.itemName)?.GetComponent<ItemDrop>();
-                if (item == null)
-                {
-                    Debug.LogWarning($"The required item '{r.itemName}' does not exist.");
-                }
-
-                return item;
-            }
+            ItemDrop? ResItem(Requirement r) => fetchByName(ObjectDB.instance, r.itemName);
 
             Dictionary<string, Piece.Requirement?> resources = craft.Reqs.Where(r => r.itemName != "")
                 .ToDictionary(r => r.itemName,
@@ -1724,5 +1782,25 @@ public static class PiecePrefabManager
                 }
             }
         }
+    }
+}
+
+[PublicAPI]
+public class Conversion
+{
+    internal class ConversionConfig
+    {
+        public ConfigEntry<string> input = null!;
+        public ConfigEntry<string> output = null!;
+    }
+
+    public string Input = null!;
+    public string Output = null!;
+
+    internal ConversionConfig? config;
+
+    public Conversion(BuildPiece conversionPiece)
+    {
+        conversionPiece.Conversions.Add(this);
     }
 }
