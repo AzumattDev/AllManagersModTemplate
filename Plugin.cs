@@ -55,9 +55,10 @@ namespace AllManagersModTemplate
         {
             // Uncomment the line below to use the LocalizationManager for localizing your mod.
             //Localizer.Load(); // Use this to initialize the LocalizationManager (for more information on LocalizationManager, see the LocalizationManager documentation https://github.com/blaxxun-boop/LocalizationManager#example-project).
-
-            _serverConfigLocked = config("1 - General", "Lock Configuration", Toggle.On,
-                "If on, the configuration is locked and can be changed by server admins only.");
+            bool saveOnSet = Config.SaveOnConfigSet;
+            Config.SaveOnConfigSet = false; // This and the variable above are used to prevent the config from saving on startup for each config entry. This is speeds up the startup process.
+            
+            _serverConfigLocked = config("1 - General", "Lock Configuration", Toggle.On, "If on, the configuration is locked and can be changed by server admins only.");
             _ = ConfigSync.AddLockingConfigEntry(_serverConfigLocked);
 
 
@@ -67,9 +68,9 @@ namespace AllManagersModTemplate
             BuildPiece.ConfigurationEnabled = false;
             
             // Format: new("AssetBundleName", "PrefabName", "FolderName");
-            BuildPiece examplePiece1 = new("funward", "funward", "FunWard");
+            BuildPiece examplePiece1 = new("funwardBundle", "funwardPrefabName", "FunWardFolder");
 
-            examplePiece1.Name.English("Fun Ward"); // Localize the name and description for the building piece for a language.
+            examplePiece1.Name.English("Fun Ward"); // Localize the name and description for the building piece for a language. Use this if you're not using the LocalizationManager.
             examplePiece1.Description.English("Ward For testing the Piece Manager");
             examplePiece1.RequiredItems.Add("FineWood", 20, false); // Set the required items to build. Format: ("PrefabName", Amount, Recoverable)
             examplePiece1.RequiredItems.Add("SurtlingCore", 20, false);
@@ -128,14 +129,11 @@ namespace AllManagersModTemplate
 
             #region SkillManager Example Code
 
-            Skill
-                tenacity = new("Tenacity",
-                    "tenacity-icon.png"); // Skill name along with the skill icon. By default the icon is found in the icons folder. Put it there if you wish to load one.
+            Skill tenacity = new("Tenacity", "tenacity-icon.png"); // Skill name along with the skill icon. By default the icon is found in the icons folder. Put it there if you wish to load one.
 
             tenacity.Description.English("Reduces damage taken by 0.2% per level.");
             tenacity.Name.German("Hartnäckigkeit"); // Use this to localize values for the name
-            tenacity.Description.German(
-                "Reduziert erlittenen Schaden um 0,2% pro Stufe."); // You can do the same for the description
+            tenacity.Description.German("Reduziert erlittenen Schaden um 0,2% pro Stufe."); // You can do the same for the description
             tenacity.Configurable = true;
 
             #endregion
@@ -146,8 +144,7 @@ namespace AllManagersModTemplate
             {
                 MapIcon = "portalicon.png",
                 ShowMapIcon = ShowIcon.Explored,
-                MapIconSprite = Sprite.Create(tex, new Rect(0.0f, 0.0f, tex.width, tex.height), new Vector2(0.5f, 0.5f),
-                    100.0f),
+                MapIconSprite = Sprite.Create(tex, new Rect(0.0f, 0.0f, tex.width, tex.height), new Vector2(0.5f, 0.5f), 100.0f),
                 CanSpawn = true,
                 SpawnArea = Heightmap.BiomeArea.Everything,
                 Prioritize = true,
@@ -275,10 +272,8 @@ namespace AllManagersModTemplate
 
 
             // If you have something that shouldn't go into the ObjectDB, like vfx or sfx that only need to be added to ZNetScene
-            ItemManager.PrefabManager.RegisterPrefab(PrefabManager.RegisterAssetBundle("ironfang"), "axeVisual",
-                    false); // If our axe has a special visual effect, like a glow, we can skip adding it to the ObjectDB this way
-            ItemManager.PrefabManager.RegisterPrefab(PrefabManager.RegisterAssetBundle("ironfang"), "axeSound",
-                    false); // Same for special sound effects
+            ItemManager.PrefabManager.RegisterPrefab(PrefabManager.RegisterAssetBundle("ironfang"), "axeVisual", false); // If our axe has a special visual effect, like a glow, we can skip adding it to the ObjectDB this way
+            ItemManager.PrefabManager.RegisterPrefab(PrefabManager.RegisterAssetBundle("ironfang"), "axeSound", false); // Same for special sound effects
             
             Item heroBlade = new("heroset", "HeroBlade");
             heroBlade.Crafting.Add(ItemManager.CraftingTable.Workbench, 2);
@@ -348,6 +343,12 @@ namespace AllManagersModTemplate
             Assembly assembly = Assembly.GetExecutingAssembly();
             _harmony.PatchAll(assembly);
             SetupWatcher();
+            
+            if (saveOnSet)
+            {
+                Config.SaveOnConfigSet = saveOnSet;
+                Config.Save();
+            }
         }
 
         private void OnDestroy()

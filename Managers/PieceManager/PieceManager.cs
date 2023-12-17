@@ -508,7 +508,7 @@ public class BuildPiece
                     $"Item costs to craft {localizedName}");
                 cfg.craft.SettingChanged += (_, _) =>
                 {
-                    if (ObjectDB.instance && ObjectDB.instance.GetItemPrefab("Wood") != null)
+                    if (ObjectDB.instance && ObjectDB.instance.GetItemPrefab("YagluthDrop") != null)
                     {
                         Piece.Requirement[] requirements =
                             SerializedRequirements.toPieceReqs(new SerializedRequirements(cfg.craft.Value));
@@ -535,7 +535,7 @@ public class BuildPiece
     [HarmonyPriority(Priority.VeryHigh)]
     internal static void Patch_ObjectDBInit(ObjectDB __instance)
     {
-        if (__instance.GetItemPrefab("Wood") == null)
+        if (__instance.GetItemPrefab("YagluthDrop") == null)
         {
             return;
         }
@@ -908,7 +908,11 @@ public class LocalizeKey
     public readonly string Key;
     public readonly Dictionary<string, string> Localizations = new();
 
-    public LocalizeKey(string key) => Key = key.Replace("$", "");
+    public LocalizeKey(string key)
+    {
+        Key = key.Replace("$", "");
+        keys.Add(this);
+    }
 
     public void Alias(string alias)
     {
@@ -984,7 +988,7 @@ public class LocalizeKey
             }
             else if (key.Localizations.TryGetValue("alias", out string alias))
             {
-                Localization.instance.AddWord(key.Key, Localization.instance.Localize(alias));
+                __instance.AddWord(key.Key, Localization.instance.Localize(alias));
             }
         }
     }
@@ -1169,7 +1173,7 @@ public class AdminSyncing
                 Piece piecePrefab = piece.Prefab.GetComponent<Piece>();
                 string pieceName = piecePrefab.m_name;
                 string localizedName = Localization.instance.Localize(pieceName).Trim();
-                if (!ObjectDB.instance || ObjectDB.instance.GetItemPrefab("Wood") == null) continue;
+                if (!ObjectDB.instance || ObjectDB.instance.GetItemPrefab("YagluthDrop") == null) continue;
                 foreach (Piece instantiatedPiece in UnityEngine.Object.FindObjectsOfType<Piece>())
                 {
                     if (admin)

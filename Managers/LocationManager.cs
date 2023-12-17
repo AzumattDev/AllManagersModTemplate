@@ -206,18 +206,18 @@ public class Location
 	{
 		foreach (ZNetView netView in registeredLocations.SelectMany(l => l.location.GetComponentsInChildren<ZNetView>(true)))
 		{
-			if (__instance.m_namedPrefabs.ContainsKey(netView.name.GetStableHashCode()))
+			if (__instance.m_namedPrefabs.ContainsKey(netView.GetPrefabName().GetStableHashCode()))
 			{
-				string otherName = __instance.m_namedPrefabs[netView.name.GetStableHashCode()].name;
-				if (netView.name != otherName)
+				string otherName = Utils.GetPrefabName(__instance.m_namedPrefabs[netView.GetPrefabName().GetStableHashCode()]);
+				if (netView.GetPrefabName() != otherName)
 				{
-					Debug.LogError($"Found hash collision for names of prefabs {netView.name} and {otherName} in {Assembly.GetExecutingAssembly()}. Skipping.");
+					Debug.LogError($"Found hash collision for names of prefabs {netView.GetPrefabName()} and {otherName} in {Assembly.GetExecutingAssembly()}. Skipping.");
 				}
 			}
 			else
 			{
 				__instance.m_prefabs.Add(netView.gameObject);
-				__instance.m_namedPrefabs[netView.name.GetStableHashCode()] = netView.gameObject;
+				__instance.m_namedPrefabs[netView.GetPrefabName().GetStableHashCode()] = netView.gameObject;
 			}
 		}
 

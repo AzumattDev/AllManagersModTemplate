@@ -5,6 +5,8 @@ using System.Linq;
 using System.Reflection;
 using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
+using System.Runtime.Serialization;
+using System.Text;
 using BepInEx;
 using BepInEx.Bootstrap;
 using HarmonyLib;
@@ -20,6 +22,7 @@ public abstract class ItemData
 
 	protected virtual bool AllowStackingIdenticalValues { get; set; } = false;
 
+	// Value is the raw data stored on the Item. An ItemData implementing class may either use it directly, or attach a [SerializeField] attribute to at least one field, in which case Value will be maintained by the default Load() and Save() implementations.
 	public string Value
 	{
 		get => Item.m_customData.TryGetValue(CustomDataKey, out string data) ? data : "";
@@ -47,8 +50,58 @@ public abstract class ItemData
 	public ItemInfo Info => (info ?? constructingInfo).TryGetTarget(out ItemInfo itemInfo) ? itemInfo : new ItemInfo(new ItemDrop.ItemData());
 
 	public virtual void FirstLoad() { }
-	public virtual void Load() { }
-	public virtual void Save() { }
+
+	public virtual void Load()
+	{
+		if (fetchSerializedFields() is not { Count: > 0 } fields || Value == "")
+		{
+			return;
+		}
+
+		List<object> obj = new();
+		foreach (string part in Value.Split('|'))
+		{
+			string[] keyVal = part.Split(':');
+			if (keyVal.Length != 2 || !fields.TryGetValue(keyVal[0], out FieldInfo field))
+			{
+				continue;
+			}
+
+			ZPackage pkg = new(keyVal[1]);
+			ParameterInfo param = (ParameterInfo)FormatterServices.GetUninitializedObject(typeof(ParameterInfo));
+			parameterInfoClassImpl.SetValue(param, field.FieldType);
+			obj.Clear();
+			ZRpc.Deserialize(new[] { null, param }, pkg, ref obj);
+			if (obj.Count > 0)
+			{
+				field.SetValue(this, obj[0]);
+			}
+		}
+	}
+
+	public virtual void Save()
+	{
+		if (fetchSerializedFields() is not { Count: > 0 } fields)
+		{
+			return;
+		}
+
+		StringBuilder toSave = new();
+
+		foreach (FieldInfo field in fields.Values)
+		{
+			ZPackage pkg = new();
+			ZRpc.Serialize(new[] { field.GetValue(this) }, ref pkg);
+			toSave.Append(field.Name);
+			toSave.Append(':');
+			toSave.Append(pkg.GetBase64());
+			toSave.Append('|');
+		}
+
+		--toSave.Length;
+		Value = toSave.ToString();
+	}
+
 	public virtual void Unload() { }
 	public virtual void Upgraded() { }
 
@@ -57,10 +110,25 @@ public abstract class ItemData
 	// If non-null, the new item will have ItemData with this new string-value
 	// By default stacking is disallowed. Set AllowStackingIdenticalValues property to true for trivial by Value comparisons.
 	public virtual string? TryStack(ItemData? data) => AllowStackingIdenticalValues && data?.Value == Value ? Value : null;
+
+	private static readonly FieldInfo parameterInfoClassImpl = AccessTools.DeclaredField(typeof(ParameterInfo), "ClassImpl");
+	private static Dictionary<Type, Dictionary<string, FieldInfo>> serializedFields = new();
+
+	private Dictionary<string, FieldInfo> fetchSerializedFields()
+	{
+		Type t = GetType();
+		if (serializedFields.TryGetValue(t, out Dictionary<string, FieldInfo> fields))
+		{
+			return fields;
+		}
+
+		return serializedFields[t] = t.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance).Where(f => f.GetCustomAttributes(typeof(SerializeField), true).Length > 0).ToDictionary(f => f.Name, f => f);
+	}
 }
 
 public sealed class StringItemData : ItemData
 {
+	
 }
 
 [PublicAPI]
@@ -95,6 +163,12 @@ public class ItemInfo : IEnumerable<ItemData>
 	private WeakReference<ItemInfo>? selfReference = null;
 
 	internal HashSet<string> isCloned = new();
+	private static ItemDrop.ItemData? awakeningItem = null;
+	
+	private static Assembly primaryAssembly = Assembly.GetExecutingAssembly();
+	private static Dictionary<Assembly, string> assemblyNameCache = new();
+	private static Dictionary<Type, string> classKeyCache = new();
+	private HashSet<string> fetchedClassKeys = new();
 
 	internal static void addTypeToInheritorsCache(Type type, string typeKey)
 	{
@@ -124,11 +198,27 @@ public class ItemInfo : IEnumerable<ItemData>
 		}
 	}
 
+	private static string cachedAssemblyName(Assembly assembly)
+	{
+		if (assemblyNameCache.TryGetValue(assembly, out string name))
+		{
+			return name;
+		}
+		return assemblyNameCache[assembly] = assembly.GetName().Name;
+	}
+
 	internal static string classKey(Type type, string key)
 	{
-		string typeKey = type.FullName + (type.Assembly != Assembly.GetExecutingAssembly() ? $",{type.Assembly.GetName().Name}" : "");
-		addTypeToInheritorsCache(type, typeKey);
-		return typeKey + (key == "" ? "" : $"#{key}");
+		if (!classKeyCache.TryGetValue(type, out string typeKey))
+		{
+			typeKey = type.FullName + (type.Assembly != primaryAssembly ? $",{cachedAssemblyName(type.Assembly)}" : "");
+			addTypeToInheritorsCache(type, typeKey);
+		}
+		if (key == "")
+		{
+			return typeKey;
+		}
+		return $"{typeKey}#{key}";
 	}
 
 	internal static string dataKey(string key) => $"{modGuid}#{key}";
@@ -164,14 +254,19 @@ public class ItemInfo : IEnumerable<ItemData>
 	public T? Add<T>(string key = "") where T : ItemData, new()
 	{
 		string compoundKey = classKey(typeof(T), key);
-		string fullKey = dataKey(compoundKey);
-		if (ItemData.m_customData.ContainsKey(fullKey))
+		if (fetchedClassKeys.Contains(compoundKey) && data.ContainsKey(compoundKey))
 		{
 			return null;
 		}
 
+		string fullKey = dataKey(compoundKey);
+		if (ItemData.m_customData.ContainsKey(fullKey) || (awakeningItem != ItemData && data.ContainsKey(compoundKey)))
+		{
+			return null;
+		}			
+
 		ItemData.m_customData[fullKey] = "";
-		ItemDataManager.ItemData.constructingInfo = selfReference ??= new WeakReference<ItemInfo>(this); 
+		ItemDataManager.ItemData.constructingInfo = selfReference ??= new WeakReference<ItemInfo>(this);
 		T obj = new() { info = selfReference, Key = key };
 		data[compoundKey] = obj;
 		obj.Value = ""; // initial Store
@@ -198,10 +293,14 @@ public class ItemInfo : IEnumerable<ItemData>
 				return (T?)(object)dataObj;
 			}
 
-			string fullKey = dataKey(compoundKey);
-			if (ItemData.m_customData.ContainsKey(fullKey))
+			if (!fetchedClassKeys.Contains(compoundKey) && awakeningItem != ItemData)
 			{
-				return (T?)(object)constructDataObj(compoundKey)!;
+				string fullKey = dataKey(compoundKey);
+				fetchedClassKeys.Add(compoundKey);
+				if (ItemData.m_customData.ContainsKey(fullKey))
+				{
+					return (T?)(object)constructDataObj(compoundKey)!;
+				}
 			}
 		}
 
@@ -233,7 +332,16 @@ public class ItemInfo : IEnumerable<ItemData>
 		return false;
 	}
 
-	public bool Remove<T>(T itemData) where T : ItemData => Remove<T>(itemData.Key);
+	private static MethodInfo removeMethod = typeof(ItemInfo).GetMethods().Single(m => m.Name == nameof(Remove) && m.IsGenericMethod && m.GetParameters()[0].ParameterType == typeof(string));
+	public bool Remove<T>(T itemData) where T : ItemData
+	{
+		if (typeof(T) == itemData.GetType())
+		{
+			return Remove<T>(itemData.Key);
+		}
+
+		return (bool)removeMethod.MakeGenericMethod(itemData.GetType()).Invoke(this, new object[] { itemData.Key });
+	}
 
 	private ItemData? constructDataObj(string key)
 	{
@@ -243,7 +351,7 @@ public class ItemInfo : IEnumerable<ItemData>
 			return null;
 		}
 
-		ItemDataManager.ItemData.constructingInfo = selfReference ??= new WeakReference<ItemInfo>(this); 
+		ItemDataManager.ItemData.constructingInfo = selfReference ??= new WeakReference<ItemInfo>(this);
 		ItemData obj = (ItemData)Activator.CreateInstance(type);
 		data[key] = obj;
 		obj.info = selfReference;
@@ -263,6 +371,11 @@ public class ItemInfo : IEnumerable<ItemData>
 
 	public void LoadAll()
 	{
+		if (awakeningItem == ItemData)
+		{
+			return;
+		}
+
 		string prefix = dataKey("");
 		List<string> keys = ItemData.m_customData.Keys.ToList();
 		foreach (string key in keys)
@@ -358,6 +471,7 @@ public class ItemInfo : IEnumerable<ItemData>
 
 	private static void RegisterForceLoadedTypesAddItem(ItemDrop.ItemData? __result)
 	{
+		awakeningItem = null;
 		if (__result is not null)
 		{
 			RegisterForceLoadedTypes(__result);
@@ -626,6 +740,7 @@ public class ItemInfo : IEnumerable<ItemData>
 				itemData.Upgraded();
 			}
 			currentlyUpgradingItem = null;
+			awakeningItem = null;
 		}
 		else if (item.m_itemData.m_dropPrefab is { } prefab && item.m_itemData.m_customData.Count == 0)
 		{
@@ -662,6 +777,14 @@ public class ItemInfo : IEnumerable<ItemData>
 		}
 	}
 
+	private static void TrackAwakeningItem(ItemDrop __instance)
+	{
+		if (ZNetView.m_forceDisableInit)
+		{
+			awakeningItem = __instance.m_itemData;
+		}
+	}
+
 	static ItemInfo()
 	{
 		Harmony harmony = new("org.bepinex.helpers.ItemDataManager");
@@ -691,7 +814,7 @@ public class ItemInfo : IEnumerable<ItemData>
 		// Note: Inventory load implicitly handled by ItemData.Clone() handling within AddItem
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(Player), nameof(Player.Load)), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(RegisterForceLoadedTypesOnPlayerLoaded)), Priority.VeryHigh));
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(Inventory), nameof(Inventory.AddItem), new[] { typeof(string), typeof(int), typeof(int), typeof(int), typeof(long), typeof(string), typeof(bool) }), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(RegisterForceLoadedTypesAddItem)), Priority.First));
-		harmony.Patch(AccessTools.DeclaredMethod(typeof(ItemDrop), nameof(ItemDrop.Awake)), transpiler: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(ImportCustomDataOnUpgrade)), Priority.First), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(ItemDropAwake)), Priority.First));
+		harmony.Patch(AccessTools.DeclaredMethod(typeof(ItemDrop), nameof(ItemDrop.Awake)), prefix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(TrackAwakeningItem))), transpiler: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(ImportCustomDataOnUpgrade)), Priority.First), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(ItemDropAwake)), Priority.First));
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(ItemDrop), nameof(ItemDrop.Awake)), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(ItemDropAwakeDelayed)), Priority.First - 1));
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(ItemDrop.ItemData), nameof(ItemDrop.ItemData.Clone)), prefix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(ItemDataClonePrefix))), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(ItemDataClonePostfix)), Priority.HigherThanNormal));
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(ItemDrop.ItemData), nameof(ItemDrop.ItemData.Clone)), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(ItemDataClonePostfixDelayed)), Priority.HigherThanNormal - 1));

@@ -51,6 +51,20 @@ public class Skill
 
 	public event Action<float>? SkillEffectFactorChanged;
 
+	private int skillLoss = 5;
+
+	public int SkillLoss
+	{
+		get => skillLoss;
+		set
+		{
+			skillLoss = value;
+			SkillLossChanged?.Invoke(value);
+		}
+	}
+
+	public event Action<float>? SkillLossChanged;
+
 	public bool Configurable = false;
 
 	public Skill(string englishName, string icon) : this(englishName, loadSprite(icon, 64, 64)) { }
@@ -67,7 +81,7 @@ public class Skill
 			m_description = "$skilldesc_" + sanitizedName,
 			m_icon = icon,
 			m_increseStep = 1f,
-			m_skill = skill
+			m_skill = skill,
 		};
 		internalSkillName = sanitizedName;
 		skillName = englishName;
@@ -117,7 +131,11 @@ public class Skill
 		public readonly string Key;
 		public readonly Dictionary<string, string> Localizations = new();
 
-		public LocalizeKey(string key) => Key = key.Replace("$", "");
+		public LocalizeKey(string key)
+		{
+			Key = key.Replace("$", "");
+			keys.Add(this);
+		}
 
 		public void Alias(string alias)
 		{
@@ -190,7 +208,7 @@ public class Skill
 				}
 				else if (key.Localizations.TryGetValue("alias", out string alias))
 				{
-					Localization.instance.AddWord(key.Key, Localization.instance.Localize(alias));
+					__instance.AddWord(key.Key, Localization.instance.Localize(alias));
 				}
 			}
 		}
@@ -206,6 +224,7 @@ public class Skill
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(Localization), nameof(Localization.LoadCSV)), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(LocalizeKey), nameof(LocalizeKey.AddLocalizedKeys))));
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(Terminal), nameof(Terminal.InitTerminal)), new HarmonyMethod(AccessTools.DeclaredMethod(typeof(Skill), nameof(Patch_Terminal_InitTerminal_Prefix))), new HarmonyMethod(AccessTools.DeclaredMethod(typeof(Skill), nameof(Patch_Terminal_InitTerminal))));
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(Localization), nameof(Localization.SetupLanguage)), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(LocalizationCache), nameof(LocalizationCache.LocalizationPostfix))));
+		harmony.Patch(AccessTools.DeclaredMethod(typeof(Skills), nameof(Skills.OnDeath)), new HarmonyMethod(AccessTools.DeclaredMethod(typeof(Skill), nameof(Patch_Skills_OnDeath_Prefix))), finalizer: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(Skill), nameof(Patch_Skills_OnDeath_Finalizer))));
 	}
 
 	private class ConfigurationManagerAttributes
@@ -230,6 +249,10 @@ public class Skill
 				ConfigEntry<float> skillEffect = config(englishName, "Skill effect factor", skill.SkillEffectFactor, new ConfigDescription("The power of the skill, based on the default power.", new AcceptableValueRange<float>(0.01f, 5f), new ConfigurationManagerAttributes { Category = localizedName }));
 				skill.SkillEffectFactor = skillEffect.Value;
 				skillEffect.SettingChanged += (_, _) => skill.SkillEffectFactor = skillEffect.Value;
+
+				ConfigEntry<int> skillLoss = config(englishName, "Skill loss", skill.skillLoss, new ConfigDescription("How much experience to lose on death.", new AcceptableValueRange<int>(0, 100), new ConfigurationManagerAttributes { Category = localizedName }));
+				skill.skillLoss = skillLoss.Value;
+				skillLoss.SettingChanged += (_, _) => skill.skillLoss = skillLoss.Value;
 			}
 		}
 	}
@@ -276,6 +299,36 @@ public class Skill
 			}
 		}
 		return true;
+	}
+
+	private static void Patch_Skills_OnDeath_Prefix(Skills __instance, ref Dictionary<Skills.SkillType, Skills.Skill>? __state)
+	{
+		__state ??= new Dictionary<Skills.SkillType, Skills.Skill>();
+		foreach (KeyValuePair<Skills.SkillType, Skill> kv in skills)
+		{
+			if (__instance.m_skillData.TryGetValue(kv.Key, out Skills.Skill skill))
+			{
+				__state[kv.Key] = skill;
+				if (kv.Value.skillLoss > 0)
+				{
+					skill.m_level -= skill.m_level * kv.Value.SkillLoss / 100f;
+					skill.m_accumulator = 0.0f;
+				}
+				__instance.m_skillData.Remove(kv.Key);
+			}
+		}
+	}
+
+	private static void Patch_Skills_OnDeath_Finalizer(Skills __instance, ref Dictionary<Skills.SkillType, Skills.Skill>? __state)
+	{
+		if (__state is not null)
+		{
+			foreach (KeyValuePair<Skills.SkillType, Skills.Skill> kv in __state)
+			{
+				__instance.m_skillData[kv.Key] = kv.Value;
+			}
+			__state = null;
+		}
 	}
 
 	private static bool InitializedTerminal = false;
@@ -399,4 +452,15 @@ public static class SkillExtensions
 	public static float GetSkillFactor(this Skills skills, string name) => skills.GetSkillFactor(Skill.fromName(name)) * Skill.skillByName[name].SkillEffectFactor;
 	public static void RaiseSkill(this Character character, string name, float value = 1f) => character.RaiseSkill(Skill.fromName(name), value);
 	public static void RaiseSkill(this Skills skill, string name, float value = 1f) => skill.RaiseSkill(Skill.fromName(name), value);
+
+	public static void LowerSkill(this Character character, string name, float factor = 1f) => character.GetSkills().LowerSkill(name, factor);
+
+	public static void LowerSkill(this Skills skills, string name, float factor)
+	{
+		if (factor > 0 && skills.m_skillData.TryGetValue(Skill.fromName(name), out Skills.Skill skill))
+		{
+			skill.m_level -= skill.m_level * factor;
+			skill.m_accumulator = 0.0f;
+		}
+	}
 }
