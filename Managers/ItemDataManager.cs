@@ -18,7 +18,7 @@ namespace ItemDataManager;
 [PublicAPI]
 public abstract class ItemData
 {
-	public string CustomDataKey { get; private set; } = null!;
+	public string CustomDataKey { get; internal set; } = null!;
 
 	protected virtual bool AllowStackingIdenticalValues { get; set; } = false;
 
@@ -29,17 +29,7 @@ public abstract class ItemData
 		set => Item.m_customData[CustomDataKey] = value;
 	}
 
-	private string key = null!;
-
-	public string Key
-	{
-		get => key;
-		internal set
-		{
-			key = value;
-			CustomDataKey = ItemInfo.dataKey(ItemInfo.classKey(GetType(), Key));
-		}
-	}
+	public string Key { get; internal set; } = null!;
 
 	public bool IsCloned => Info.isCloned.Contains(CustomDataKey);
 	public bool IsAlive => (info ?? constructingInfo).TryGetTarget(out _);
@@ -164,7 +154,7 @@ public class ItemInfo : IEnumerable<ItemData>
 
 	internal HashSet<string> isCloned = new();
 	private static ItemDrop.ItemData? awakeningItem = null;
-	
+
 	private static Assembly primaryAssembly = Assembly.GetExecutingAssembly();
 	private static Dictionary<Assembly, string> assemblyNameCache = new();
 	private static Dictionary<Type, string> classKeyCache = new();
@@ -263,11 +253,11 @@ public class ItemInfo : IEnumerable<ItemData>
 		if (ItemData.m_customData.ContainsKey(fullKey) || (awakeningItem != ItemData && data.ContainsKey(compoundKey)))
 		{
 			return null;
-		}			
+		}
 
 		ItemData.m_customData[fullKey] = "";
 		ItemDataManager.ItemData.constructingInfo = selfReference ??= new WeakReference<ItemInfo>(this);
-		T obj = new() { info = selfReference, Key = key };
+		T obj = new() { info = selfReference, Key = key, CustomDataKey = fullKey };
 		data[compoundKey] = obj;
 		obj.Value = ""; // initial Store
 		obj.FirstLoad();
@@ -299,7 +289,7 @@ public class ItemInfo : IEnumerable<ItemData>
 				fetchedClassKeys.Add(compoundKey);
 				if (ItemData.m_customData.ContainsKey(fullKey))
 				{
-					return (T?)(object)constructDataObj(compoundKey)!;
+					return (T?)(object)constructDataObj(fullKey, compoundKey)!;
 				}
 			}
 		}
@@ -333,6 +323,7 @@ public class ItemInfo : IEnumerable<ItemData>
 	}
 
 	private static MethodInfo removeMethod = typeof(ItemInfo).GetMethods().Single(m => m.Name == nameof(Remove) && m.IsGenericMethod && m.GetParameters()[0].ParameterType == typeof(string));
+
 	public bool Remove<T>(T itemData) where T : ItemData
 	{
 		if (typeof(T) == itemData.GetType())
@@ -343,7 +334,7 @@ public class ItemInfo : IEnumerable<ItemData>
 		return (bool)removeMethod.MakeGenericMethod(itemData.GetType()).Invoke(this, new object[] { itemData.Key });
 	}
 
-	private ItemData? constructDataObj(string key)
+	private ItemData? constructDataObj(string fullkey, string key)
 	{
 		string[] keyParts = key.Split(new[] { '#' }, 2);
 		if (Type.GetType(keyParts[0]) is not { } type || !typeof(ItemData).IsAssignableFrom(type))
@@ -356,6 +347,7 @@ public class ItemInfo : IEnumerable<ItemData>
 		data[key] = obj;
 		obj.info = selfReference;
 		obj.Key = keyParts.Length > 1 ? keyParts[1] : "";
+		obj.CustomDataKey = fullkey;
 		obj.Load();
 
 		return obj;
@@ -385,7 +377,7 @@ public class ItemInfo : IEnumerable<ItemData>
 				string unprefixedKey = key.Substring(prefix.Length);
 				if (!data.ContainsKey(unprefixedKey))
 				{
-					constructDataObj(unprefixedKey);
+					constructDataObj(key, unprefixedKey);
 				}
 			}
 		}
@@ -486,7 +478,7 @@ public class ItemInfo : IEnumerable<ItemData>
 			string fullKey = dataKey(compoundKey);
 			if (itemData.m_customData.ContainsKey(fullKey))
 			{
-				itemData.Data().constructDataObj(compoundKey);
+				itemData.Data().constructDataObj(fullKey, compoundKey);
 			}
 		}
 	}
@@ -813,7 +805,7 @@ public class ItemInfo : IEnumerable<ItemData>
 		}
 		// Note: Inventory load implicitly handled by ItemData.Clone() handling within AddItem
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(Player), nameof(Player.Load)), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(RegisterForceLoadedTypesOnPlayerLoaded)), Priority.VeryHigh));
-		harmony.Patch(AccessTools.DeclaredMethod(typeof(Inventory), nameof(Inventory.AddItem), new[] { typeof(string), typeof(int), typeof(int), typeof(int), typeof(long), typeof(string), typeof(bool) }), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(RegisterForceLoadedTypesAddItem)), Priority.First));
+		harmony.Patch(AccessTools.DeclaredMethod(typeof(Inventory), nameof(Inventory.AddItem), new[] { typeof(string), typeof(int), typeof(int), typeof(int), typeof(long), typeof(string), typeof(Vector2i), typeof(bool) }), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(RegisterForceLoadedTypesAddItem)), Priority.First));
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(ItemDrop), nameof(ItemDrop.Awake)), prefix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(TrackAwakeningItem))), transpiler: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(ImportCustomDataOnUpgrade)), Priority.First), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(ItemDropAwake)), Priority.First));
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(ItemDrop), nameof(ItemDrop.Awake)), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(ItemDropAwakeDelayed)), Priority.First - 1));
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(ItemDrop.ItemData), nameof(ItemDrop.ItemData.Clone)), prefix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(ItemDataClonePrefix))), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(ItemDataClonePostfix)), Priority.HigherThanNormal));
@@ -895,6 +887,8 @@ public class ForeignItemInfo : IEnumerable<object>
 [PublicAPI]
 public static class ItemExtensions
 {
+	private const string className = nameof(ItemDataManager) + "." + nameof(ItemExtensions);
+
 	internal static readonly ConditionalWeakTable<ItemDrop.ItemData, ItemInfo> itemInfo = new();
 	private static readonly ConditionalWeakTable<ItemDrop.ItemData, Dictionary<string, ForeignItemInfo?>> foreignItemInfo = new();
 
@@ -920,12 +914,12 @@ public static class ItemExtensions
 			return null;
 		}
 
-		if (plugin.Instance.GetType().Assembly.GetType(typeof(ItemExtensions).FullName!)?.GetMethod(nameof(Data), BindingFlags.Static | BindingFlags.Public, null, new[] { typeof(ItemDrop.ItemData) }, Array.Empty<ParameterModifier>())?.Invoke(null, new object[] { item }) is { } foreignItemData)
+		if (plugin.Instance.GetType().Assembly.GetType(className)?.GetMethod(nameof(Data), BindingFlags.Static | BindingFlags.Public, null, new[] { typeof(ItemDrop.ItemData) }, Array.Empty<ParameterModifier>())?.Invoke(null, new object[] { item }) is { } foreignItemData)
 		{
 			return foreignInfos[mod] = new ForeignItemInfo(item, foreignItemData);
 		}
 
-		Debug.LogWarning($"Mod {mod} has an {typeof(ItemExtensions).FullName} class, but no Data(ItemDrop.ItemData) method could be called on it.");
+		Debug.LogWarning($"Mod {mod} has an {className} class, but no Data(ItemDrop.ItemData) method could be called on it.");
 		return foreignInfos[mod] = null;
 	}
 }

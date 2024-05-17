@@ -10,15 +10,19 @@ namespace PieceManager
     [PublicAPI]
     public static class MaterialReplacer
     {
+        private static readonly Dictionary<GameObject, bool> ObjectToSwap;
+        private static readonly Dictionary<string, Material> OriginalMaterials;
+        private static readonly Dictionary<GameObject, ShaderType> ObjectsForShaderReplace;
+        private static readonly HashSet<Shader> CachedShaders = new();
+        private static bool hasRun = false;
+
         static MaterialReplacer()
         {
             OriginalMaterials = new Dictionary<string, Material>();
             ObjectToSwap = new Dictionary<GameObject, bool>();
             ObjectsForShaderReplace = new Dictionary<GameObject, ShaderType>();
             Harmony harmony = new Harmony("org.bepinex.helpers.PieceManager");
-            harmony.Patch(AccessTools.DeclaredMethod(typeof(ZoneSystem), nameof(ZoneSystem.Start)),
-                postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(MaterialReplacer),
-                    nameof(ReplaceAllMaterialsWithOriginal))));
+            harmony.Patch(AccessTools.DeclaredMethod(typeof(ZoneSystem), nameof(ZoneSystem.Start)), postfix: new HarmonyMethod(typeof(MaterialReplacer), nameof(ReplaceAllMaterialsWithOriginal)));
         }
 
         public enum ShaderType
@@ -32,111 +36,147 @@ namespace PieceManager
             UseUnityShader
         }
 
-        private static readonly Dictionary<GameObject, bool> ObjectToSwap;
-        internal static readonly Dictionary<string, Material> OriginalMaterials;
-        private static readonly Dictionary<GameObject, ShaderType> ObjectsForShaderReplace;
-
         public static void RegisterGameObjectForShaderSwap(GameObject go, ShaderType type)
         {
-            if (ObjectsForShaderReplace.ContainsKey(go)) return;
-            ObjectsForShaderReplace.Add(go, type);
+            if (!ObjectsForShaderReplace.ContainsKey(go))
+            {
+                ObjectsForShaderReplace.Add(go, type);
+            }
         }
 
         public static void RegisterGameObjectForMatSwap(GameObject go, bool isJotunnMock = false)
         {
-            if (ObjectToSwap.ContainsKey(go)) return;
-            ObjectToSwap.Add(go, isJotunnMock);
+            if (!ObjectToSwap.ContainsKey(go))
+            {
+                ObjectToSwap.Add(go, isJotunnMock);
+            }
         }
 
         private static void GetAllMaterials()
         {
-            Material[] allMats = Resources.FindObjectsOfTypeAll<Material>();
-            foreach (Material item in allMats)
+            foreach (var material in Resources.FindObjectsOfTypeAll<Material>())
             {
-                OriginalMaterials[item.name] = item;
+                OriginalMaterials[material.name] = material;
             }
         }
 
-        private static bool hasRun;
         [HarmonyPriority(Priority.VeryHigh)]
         private static void ReplaceAllMaterialsWithOriginal()
         {
-            if (UnityEngine.SystemInfo.graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.Null) return;
-            if (hasRun) return;
-            if (OriginalMaterials.Count <= 0) GetAllMaterials();
-            foreach (Renderer renderer in ObjectToSwap.Keys.SelectMany(gameObject =>
-                         gameObject.GetComponentsInChildren<Renderer>(true)))
+            if (UnityEngine.SystemInfo.graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.Null || hasRun) return;
+
+            if (OriginalMaterials.Count == 0) GetAllMaterials();
+
+            foreach (var kvp in ObjectToSwap)
             {
-                ObjectToSwap.TryGetValue(renderer.gameObject, out bool jotunnPrefabFlag);
-                Material[] newMats = new Material[renderer.sharedMaterials.Length];
-                int i = 0;
-                foreach (Material t in renderer.sharedMaterials)
-                {
-                    string replacementString = jotunnPrefabFlag ? "JVLmock_" : "_REPLACE_";
-                    if (!t.name.StartsWith(replacementString, StringComparison.Ordinal)) continue;
-                    string matName = t.name.Replace(" (Instance)", string.Empty)
-                        .Replace(replacementString, "");
-
-                    if (OriginalMaterials.ContainsKey(matName))
-                    {
-                        newMats[i] = OriginalMaterials[matName];
-                    }
-                    else
-                    {
-                        Debug.LogWarning("No suitable material found to replace: " + matName);
-                        OriginalMaterials[matName] = newMats[i];
-                    }
-
-                    ++i;
-                }
-
-                renderer.materials = newMats;
-                renderer.sharedMaterials = newMats;
+                var go = kvp.Key;
+                var isJotunnMock = kvp.Value;
+                ProcessGameObjectMaterials(go, isJotunnMock);
             }
 
-            foreach (Renderer? renderer in ObjectsForShaderReplace.Keys.SelectMany(gameObject =>
-                         gameObject.GetComponentsInChildren<Renderer>(true)))
+            // Get all assetbundles and find the shaders in them
+            var assetBundles = Resources.FindObjectsOfTypeAll<AssetBundle>();
+            foreach (var bundle in assetBundles)
             {
-                ObjectsForShaderReplace.TryGetValue(renderer.gameObject.transform.root.gameObject,
-                    out ShaderType shaderType);
-                if (renderer == null) continue;
-                foreach (Material? t in renderer.sharedMaterials)
+                IEnumerable<Shader>? bundleShaders;
+                try
                 {
-                    if (t == null) continue;
-                    string name = t.shader.name;
-                    switch (shaderType)
-                    {
-                        case ShaderType.PieceShader:
-                            t.shader = Shader.Find("Custom/Piece");
-                            break;
-                        case ShaderType.VegetationShader:
-                            t.shader = Shader.Find("Custom/Vegetation");
-                            break;
-                        case ShaderType.RockShader:
-                            t.shader = Shader.Find("Custom/StaticRock");
-                            break;
-                        case ShaderType.RugShader:
-                            t.shader = Shader.Find("Custom/Rug");
-                            break;
-                        case ShaderType.GrassShader:
-                            t.shader = Shader.Find("Custom/Grass");
-                            break;
-                        case ShaderType.CustomCreature:
-                            t.shader = Shader.Find("Custom/Creature");
-                            break;
-                        case ShaderType.UseUnityShader:
-                            if (Shader.Find(name) != null)
-                            {
-                                t.shader = Shader.Find(name);
-                            }
-                            break;
-                        default:
-                            t.shader = Shader.Find("ToonDeferredShading2017");
-                            break;
-                    }
+                    bundleShaders = bundle.isStreamedSceneAssetBundle && bundle
+                        ? bundle.GetAllAssetNames().Select(bundle.LoadAsset<Shader>).Where(shader => shader != null)
+                        : bundle.LoadAllAssets<Shader>();
+                }
+                catch (Exception)
+                {
+                    continue;
+                }
+
+                if (bundleShaders == null) continue;
+                foreach (var shader in bundleShaders)
+                {
+                    CachedShaders.Add(shader);
                 }
             }
+
+            foreach (var kvp in ObjectsForShaderReplace)
+            {
+                var go = kvp.Key;
+                var shaderType = kvp.Value;
+                ProcessGameObjectShaders(go, shaderType);
+            }
+
             hasRun = true;
+        }
+
+        private static void ProcessGameObjectMaterials(GameObject go, bool isJotunnMock)
+        {
+            var renderers = go.GetComponentsInChildren<Renderer>(true);
+            foreach (var renderer in renderers)
+            {
+                var newMaterials = renderer.sharedMaterials.Select(material => ReplaceMaterial(material, isJotunnMock)).ToArray();
+                renderer.sharedMaterials = newMaterials;
+            }
+        }
+
+        private static Material ReplaceMaterial(Material originalMaterial, bool isJotunnMock)
+        {
+            string replacementPrefix = isJotunnMock ? "JVLmock_" : "_REPLACE_";
+            if (!originalMaterial.name.StartsWith(replacementPrefix, StringComparison.Ordinal))
+            {
+                return originalMaterial;
+            }
+
+            string cleanName = originalMaterial.name.Replace(" (Instance)", "").Replace(replacementPrefix, "");
+            if (OriginalMaterials.TryGetValue(cleanName, out var replacementMaterial))
+            {
+                return replacementMaterial;
+            }
+
+            Debug.LogWarning($"No suitable material found to replace: {cleanName}");
+            return originalMaterial;
+        }
+
+        private static void ProcessGameObjectShaders(GameObject go, ShaderType shaderType)
+        {
+            var renderers = go.GetComponentsInChildren<Renderer>(true);
+            foreach (var renderer in renderers)
+            {
+                foreach (var material in renderer.sharedMaterials)
+                {
+                    if (material != null)
+                    {
+                        material.shader = GetShaderForType(material.shader, shaderType, material.shader.name);
+                    }
+                }
+            }
+        }
+
+        private static Shader GetShaderForType(Shader orig, ShaderType shaderType, string originalShaderName)
+        {
+            switch (shaderType)
+            {
+                case ShaderType.PieceShader: return FindShaderWithName(orig, "Custom/Piece");
+                case ShaderType.VegetationShader: return FindShaderWithName(orig, "Custom/Vegetation");
+                case ShaderType.RockShader: return FindShaderWithName(orig, "Custom/StaticRock");
+                case ShaderType.RugShader: return FindShaderWithName(orig, "Custom/Rug");
+                case ShaderType.GrassShader: return FindShaderWithName(orig, "Custom/Grass");
+                case ShaderType.CustomCreature: return FindShaderWithName(orig, "Custom/Creature");
+                case ShaderType.UseUnityShader: return FindShaderWithName(orig, FindShaderWithName(orig, originalShaderName) != null ? originalShaderName : "ToonDeferredShading2017");
+                default: return FindShaderWithName(orig, "Standard");
+            }
+        }
+
+        public static Shader FindShaderWithName(Shader origShader, string name)
+        {
+            foreach (var shader in CachedShaders)
+            {
+                if (shader.name == name)
+                {
+                    return shader;
+                }
+            }
+
+
+            return origShader;
         }
     }
 }

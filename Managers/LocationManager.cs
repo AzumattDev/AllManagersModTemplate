@@ -8,6 +8,7 @@ using BepInEx;
 using BepInEx.Configuration;
 using HarmonyLib;
 using JetBrains.Annotations;
+using SoftReferenceableAssets;
 using UnityEngine;
 using Object = UnityEngine.Object;
 
@@ -17,14 +18,14 @@ public enum ShowIcon
 {
 	Always,
 	Never,
-	Explored
+	Explored,
 }
 
 public enum Rotation
 {
 	Fixed,
 	Random,
-	Slope
+	Slope,
 }
 
 [PublicAPI]
@@ -61,7 +62,7 @@ public class Location
 	public float MinimumDistanceFromGroup = 0f;
 	[Description("When to show the map icon of the location. Requires an icon to be set.\nUse 'Never' to not show a map icon for the location.\nUse 'Always' to always show a map icon for the location.\nUse 'Explored' to start showing a map icon for the location as soon as a player has explored the area.")]
 	public ShowIcon ShowMapIcon = ShowIcon.Never;
-
+	
 	[Description("Sets the map icon for the location.")]
 	public string? MapIcon
 	{
@@ -88,6 +89,8 @@ public class Location
 	public Range SpawnDistance = new(0, 10000);
 	[Description("Minimum and maximum altitude for the location.")]
 	public Range SpawnAltitude = new(-1000f, 1000f);
+	[Description("If set to true, vegetation is removed inside the location exterior radius.")]
+	public bool ClearArea = false;
 	[Description("Adds a creature to a spawner that has been added to the location prefab.")]
 	public Dictionary<string, string> CreatureSpawner = new();
 
@@ -97,7 +100,8 @@ public class Location
 	private string folderName = "";
 	private AssetBundle? assetBundle;
 	private static readonly List<Location> registeredLocations = new();
-
+	private static Dictionary<Location, SoftReference<GameObject>>? softReferences;
+	
 	public Location(string assetBundleFileName, string prefabName, string folderName = "assets") : this(PrefabManager.RegisterAssetBundle(assetBundleFileName, folderName), prefabName)
 	{
 		this.folderName = folderName;
@@ -162,44 +166,45 @@ public class Location
 
 	private static void AddLocationToZoneSystem(ZoneSystem __instance)
 	{
-		foreach (GameObject gameObject in Resources.FindObjectsOfTypeAll<GameObject>())
+		softReferences ??= registeredLocations.ToDictionary(l => l, l => PrefabManager.AddLoadedSoftReferenceAsset(l.location.gameObject));
+		
+		foreach (Location location in registeredLocations)
 		{
-			if (gameObject.name == "_Locations" && gameObject.transform.Find("Misc") is { } locationMisc)
+			__instance.m_locations.Add(new ZoneSystem.ZoneLocation
 			{
-				foreach (Location location in registeredLocations)
-				{
-					GameObject locationInstance = Object.Instantiate(location.location.gameObject, locationMisc, true);
-					locationInstance.name = location.location.name;
-					__instance.m_locations.Add(new ZoneSystem.ZoneLocation
-					{
-						m_prefabName = locationInstance.name,
-						m_enable = location.CanSpawn,
-						m_biome = location.Biome,
-						m_biomeArea = location.SpawnArea,
-						m_quantity = location.Count,
-						m_prioritized = location.Prioritize,
-						m_centerFirst = location.PreferCenter,
-						m_unique = location.Unique,
-						m_group = location.GroupName,
-						m_minDistanceFromSimilar = location.MinimumDistanceFromGroup,
-						m_iconAlways = location.ShowMapIcon == ShowIcon.Always,
-						m_iconPlaced = location.ShowMapIcon == ShowIcon.Explored,
-						m_randomRotation = location.Rotation == Rotation.Random,
-						m_slopeRotation = location.Rotation == Rotation.Slope,
-						m_snapToWater = location.SnapToWater,
-						m_minTerrainDelta = location.HeightDelta.min,
-						m_maxTerrainDelta = location.HeightDelta.max,
-						m_inForest = true,
-						m_forestTresholdMin = location.ForestThreshold.min,
-						m_forestTresholdMax = location.ForestThreshold.max,
-						m_minDistance = location.SpawnDistance.min,
-						m_maxDistance = location.SpawnDistance.max,
-						m_minAltitude = location.SpawnAltitude.min,
-						m_maxAltitude = location.SpawnAltitude.max
-					});
-				}
-			}
+				m_prefabName = location.location.name,
+				m_prefab = softReferences[location],
+				m_enable = location.CanSpawn,
+				m_biome = location.Biome,
+				m_biomeArea = location.SpawnArea,
+				m_quantity = location.Count,
+				m_prioritized = location.Prioritize,
+				m_centerFirst = location.PreferCenter,
+				m_unique = location.Unique,
+				m_group = location.GroupName,
+				m_minDistanceFromSimilar = location.MinimumDistanceFromGroup,
+				m_iconAlways = location.ShowMapIcon == ShowIcon.Always,
+				m_iconPlaced = location.ShowMapIcon == ShowIcon.Explored,
+				m_randomRotation = location.Rotation == Rotation.Random,
+				m_slopeRotation = location.Rotation == Rotation.Slope,
+				m_snapToWater = location.SnapToWater,
+				m_minTerrainDelta = location.HeightDelta.min,
+				m_maxTerrainDelta = location.HeightDelta.max,
+				m_inForest = true,
+				m_forestTresholdMin = location.ForestThreshold.min,
+				m_forestTresholdMax = location.ForestThreshold.max,
+				m_minDistance = location.SpawnDistance.min,
+				m_maxDistance = location.SpawnDistance.max,
+				m_minAltitude = location.SpawnAltitude.min,
+				m_maxAltitude = location.SpawnAltitude.max,
+				m_clearArea = location.ClearArea,
+				m_exteriorRadius = location.location.m_exteriorRadius,
+				m_interiorRadius = location.location.m_interiorRadius,
+			});
 		}
+
+		Object.DestroyImmediate(__instance.m_locationProxyPrefab.GetComponent<LocationProxy>());
+		__instance.m_locationProxyPrefab.AddComponent<LocationProxy>();
 	}
 
 	private static void AddLocationZNetViewsToZNetScene(ZNetScene __instance)
@@ -293,7 +298,7 @@ public class Location
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(FejdStartup), nameof(FejdStartup.Awake)), new HarmonyMethod(AccessTools.DeclaredMethod(typeof(Location), nameof(Patch_FejdStartup))));
 	}
 
-	private static class PrefabManager
+	public static class PrefabManager
 	{
 		private struct BundleId
 		{
@@ -314,8 +319,40 @@ public class Location
 			}
 			return assets;
 		}
-	}
 
+		[PublicAPI]
+		public static AssetID AssetIDFromObject(Object obj)
+		{
+			int id = obj.GetInstanceID();
+			return new AssetID(1, 1, 1, (uint)id);
+		}
+
+		public static SoftReference<T> AddLoadedSoftReferenceAsset<T>(T obj) where T: Object
+		{
+			AssetBundleLoader bundleLoader = AssetBundleLoader.Instance;
+			bundleLoader.m_bundleNameToLoaderIndex[""] = 0; // So that AssetLoader ctor doesn't crash
+			
+			AssetID id = AssetIDFromObject(obj);
+			AssetLoader loader = new(id, new AssetLocation("", ""))
+			{
+				m_asset = obj,
+				m_referenceCounter = new ReferenceCounter(2),
+				m_shouldBeLoaded = true,
+			};
+
+			int count = bundleLoader.m_assetIDToLoaderIndex.Count;
+			if (count >= bundleLoader.m_assetLoaders.Length)
+			{
+				Array.Resize(ref bundleLoader.m_assetLoaders, bundleLoader.m_assetIDToLoaderIndex.Count + 256);
+			}
+
+			bundleLoader.m_assetLoaders[count] = loader;
+			bundleLoader.m_assetIDToLoaderIndex[id] = count; 
+
+			return new SoftReference<T>(id) { m_name = obj.name };
+		}
+	}
+	
 	private static BaseUnityPlugin? _plugin;
 
 	private static BaseUnityPlugin plugin

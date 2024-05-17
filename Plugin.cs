@@ -35,8 +35,7 @@ namespace AllManagersModTemplate
 
         public static readonly ManualLogSource AllManagersModTemplateLogger = BepInEx.Logging.Logger.CreateLogSource(ModName);
 
-        private static readonly ConfigSync ConfigSync = new(ModGUID)
-            { DisplayName = ModName, CurrentVersion = ModVersion, MinimumRequiredVersion = ModVersion };
+        private static readonly ConfigSync ConfigSync = new(ModGUID) { DisplayName = ModName, CurrentVersion = ModVersion, MinimumRequiredVersion = ModVersion };
         
         // Location Manager variables
         public Texture2D tex = null!;
@@ -86,7 +85,7 @@ namespace AllManagersModTemplate
             examplePiece2.Name.English("Bamboo Wall");
             examplePiece2.Description.English("A wall made of bamboo!");
             examplePiece2.RequiredItems.Add("BambooLog", 20, false);
-            examplePiece2.Category.Set(PieceManager.BuildPieceCategory.Building);
+            examplePiece2.Category.Set(PieceManager.BuildPieceCategory.BuildingWorkbench);
             examplePiece2.Crafting.Set("CUSTOMTABLE"); // If you have a custom table you're adding to the game. Just set it like this.
             examplePiece2.SpecialProperties.AdminOnly = true;  // You can declare these one at a time as well!.
 
@@ -387,14 +386,9 @@ namespace AllManagersModTemplate
 
         private static ConfigEntry<Toggle> _serverConfigLocked = null!;
 
-        private ConfigEntry<T> config<T>(string group, string name, T value, ConfigDescription description,
-            bool synchronizedSetting = true)
+        private ConfigEntry<T> config<T>(string group, string name, T value, ConfigDescription description, bool synchronizedSetting = true)
         {
-            ConfigDescription extendedDescription =
-                new(
-                    description.Description +
-                    (synchronizedSetting ? " [Synced with Server]" : " [Not Synced with Server]"),
-                    description.AcceptableValues, description.Tags);
+            ConfigDescription extendedDescription = new(description.Description + (synchronizedSetting ? " [Synced with Server]" : " [Not Synced with Server]"), description.AcceptableValues, description.Tags);
             ConfigEntry<T> configEntry = Config.Bind(group, name, value, extendedDescription);
             //var configEntry = Config.Bind(group, name, value, description);
 
@@ -404,8 +398,7 @@ namespace AllManagersModTemplate
             return configEntry;
         }
 
-        private ConfigEntry<T> config<T>(string group, string name, T value, string description,
-            bool synchronizedSetting = true)
+        private ConfigEntry<T> config<T>(string group, string name, T value, string description, bool synchronizedSetting = true)
         {
             return config(group, name, value, new ConfigDescription(description), synchronizedSetting);
         }
@@ -426,8 +419,7 @@ namespace AllManagersModTemplate
             public override object Clamp(object value) => value;
             public override bool IsValid(object value) => true;
 
-            public override string ToDescriptionString() =>
-                "# Acceptable values: " + string.Join(", ", UnityInput.Current.SupportedKeyCodes);
+            public override string ToDescriptionString() => "# Acceptable values: " + string.Join(", ", UnityInput.Current.SupportedKeyCodes);
         }
 
         #endregion

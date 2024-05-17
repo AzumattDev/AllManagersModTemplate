@@ -53,7 +53,7 @@ namespace AllManagersModTemplate
             {
                 __instance.m_connectionFailedError.fontSizeMax = 25;
                 __instance.m_connectionFailedError.fontSizeMin = 15;
-                __instance.m_connectionFailedError.text += "\n" + AllManagersModTemplatePlugin.ConnectionError;
+                __instance.m_connectionFailedError.text += $"\n{AllManagersModTemplatePlugin.ConnectionError}";
             }
         }
     }
@@ -78,9 +78,7 @@ namespace AllManagersModTemplate
         {
             string? version = pkg.ReadString();
 
-            AllManagersModTemplatePlugin.AllManagersModTemplateLogger.LogInfo("Version check, local: " +
-                                                                              AllManagersModTemplatePlugin.ModVersion +
-                                                                              ",  remote: " + version);
+            AllManagersModTemplatePlugin.AllManagersModTemplateLogger.LogInfo($"Version check, local: {AllManagersModTemplatePlugin.ModVersion},  remote: {version}");
             if (version != AllManagersModTemplatePlugin.ModVersion)
             {
                 AllManagersModTemplatePlugin.ConnectionError = $"{AllManagersModTemplatePlugin.ModName} Installed: {AllManagersModTemplatePlugin.ModVersion}\n Needed: {version}";
@@ -94,14 +92,12 @@ namespace AllManagersModTemplate
                 if (!ZNet.instance.IsServer())
                 {
                     // Enable mod on client if versions match
-                    AllManagersModTemplatePlugin.AllManagersModTemplateLogger.LogInfo(
-                        "Received same version from server!");
+                    AllManagersModTemplatePlugin.AllManagersModTemplateLogger.LogInfo("Received same version from server!");
                 }
                 else
                 {
                     // Add client to validated list
-                    AllManagersModTemplatePlugin.AllManagersModTemplateLogger.LogInfo(
-                        $"Adding peer ({rpc.m_socket.GetHostName()}) to validated list");
+                    AllManagersModTemplatePlugin.AllManagersModTemplateLogger.LogInfo($"Adding peer ({rpc.m_socket.GetHostName()}) to validated list");
                     ValidatedPeers.Add(rpc);
                 }
             }
