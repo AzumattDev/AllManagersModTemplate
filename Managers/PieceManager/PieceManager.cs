@@ -1623,7 +1623,7 @@ public static class PiecePrefabManager
     private static void RepositionCategories(PieceTable pieceTable)
     {
         InitializeDefaultCategories(pieceTable);
-
+        
         RectTransform firstTab = (RectTransform)Hud.instance.m_pieceCategoryTabs[0].transform;
         RectTransform categoryRoot = (RectTransform)Hud.instance.m_pieceCategoryRoot.transform;
         RectTransform selectionWindow = (RectTransform)Hud.instance.m_pieceSelectionWindow.transform;
@@ -1641,8 +1641,6 @@ public static class PiecePrefabManager
         gridLayout.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
         gridLayout.constraintCount = 5;
         gridLayout.childAlignment = TextAnchor.MiddleCenter;
-        gridLayout.startCorner = GridLayoutGroup.Corner.UpperLeft;
-        gridLayout.startAxis = GridLayoutGroup.Axis.Horizontal;
 
         HashSet<Piece.PieceCategory> visibleCategories = CategoriesInPieceTable(pieceTable);
         UpdatePieceTableCategories(pieceTable, visibleCategories);
@@ -1681,10 +1679,6 @@ public static class PiecePrefabManager
 
             if (active)
             {
-                RectTransform rect = tab.GetComponent<RectTransform>();
-                float x = tabSize.x * (tabIndex % maxHorizontalTabs);
-                float y = -(tabSize.y + verticalSpacing) * (Mathf.Floor((float)tabIndex / maxHorizontalTabs) + 0.5f);
-                rect.anchoredPosition = tabAnchor + new Vector2(x, y);
                 tabIndex++;
             }
 
@@ -1718,7 +1712,6 @@ public static class PiecePrefabManager
                 pieceTable.m_categories.Add(category);
                 pieceTable.m_categoryLabels.Add($"${GetCategoryToken(name)}");
             }
-
             if (visibleCategories.Contains(category) && !pieceTable.m_categoryLabels.Contains($"${GetCategoryToken(name)}"))
             {
                 pieceTable.m_categoryLabels.Add($"${GetCategoryToken(name)}");
