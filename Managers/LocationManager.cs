@@ -62,7 +62,9 @@ public class Location
 	public float MinimumDistanceFromGroup = 0f;
 	[Description("When to show the map icon of the location. Requires an icon to be set.\nUse 'Never' to not show a map icon for the location.\nUse 'Always' to always show a map icon for the location.\nUse 'Explored' to start showing a map icon for the location as soon as a player has explored the area.")]
 	public ShowIcon ShowMapIcon = ShowIcon.Never;
-	
+
+	public readonly GameObject Prefab;
+
 	[Description("Sets the map icon for the location.")]
 	public string? MapIcon
 	{
@@ -123,6 +125,7 @@ public class Location
 	public Location(global::Location location)
 	{
 		this.location = location;
+        Prefab = this.location.gameObject;
 		GroupName = location.name;
 		registeredLocations.Add(this);
 	}
@@ -139,27 +142,42 @@ public class Location
 		return stream.ToArray();
 	}
 
-	private Texture2D? loadTexture(string name)
-	{
-		if (ReadEmbeddedFileBytes(name) is { } textureData)
-		{
-			Texture2D texture = new(0, 0);
-			texture.LoadImage(textureData);
-			return texture;
-		}
-		return null;
-	}
+    private Texture2D? loadTexture(string name)
+    {
+        try
+        {
+            if (ReadEmbeddedFileBytes(name) is { } textureData)
+            {
+                Texture2D texture = new(0, 0);
+                texture.LoadImage(textureData);
+                return texture;
+            }
+            return null;
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"Failed to load texture '{name}': {e.Message}");
+            return null;
+        }
+    }
 
-	private Sprite loadSprite(string name)
-	{
-		if (loadTexture(name) is { } texture)
-		{
-			return Sprite.Create(texture, new Rect(0, 0, 64, 64), Vector2.zero);
-		}
-		if (assetBundle?.LoadAsset<Sprite>(name) is { } sprite)
-		{
-			return sprite;
-		}
+    private Sprite loadSprite(string name)
+    {
+        try
+        {
+            if (loadTexture(name) is { } texture)
+            {
+                return Sprite.Create(texture, new Rect(0, 0, 64, 64), Vector2.zero);
+            }
+            if (assetBundle?.LoadAsset<Sprite>(name) is { } sprite)
+            {
+                return sprite;
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"Failed to load sprite '{name}': {e.Message}");
+        }
 
 		throw new FileNotFoundException($"Could not find a file named {name} for the map icon");
 	}
@@ -298,27 +316,47 @@ public class Location
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(FejdStartup), nameof(FejdStartup.Awake)), new HarmonyMethod(AccessTools.DeclaredMethod(typeof(Location), nameof(Patch_FejdStartup))));
 	}
 
-	public static class PrefabManager
-	{
-		private struct BundleId
-		{
-			[UsedImplicitly]
-			public string assetBundleFileName;
-			[UsedImplicitly]
-			public string folderName;
-		}
+public static class PrefabManager
+{
+    private struct BundleId
+    {
+        [UsedImplicitly]
+        public string assetBundleFileName;
+        [UsedImplicitly]
+        public string folderName;
+    }
 
-		private static readonly Dictionary<BundleId, AssetBundle> bundleCache = new();
+    private static readonly Dictionary<BundleId, AssetBundle> bundleCache = new();
 
-		public static AssetBundle RegisterAssetBundle(string assetBundleFileName, string folderName = "assets")
-		{
-			BundleId id = new() { assetBundleFileName = assetBundleFileName, folderName = folderName };
-			if (!bundleCache.TryGetValue(id, out AssetBundle assets))
-			{
-				assets = bundleCache[id] = Resources.FindObjectsOfTypeAll<AssetBundle>().FirstOrDefault(a => a.name == assetBundleFileName) ?? AssetBundle.LoadFromStream(Assembly.GetExecutingAssembly().GetManifestResourceStream(Assembly.GetExecutingAssembly().GetName().Name + $"{(folderName == "" ? "" : ".") + folderName}." + assetBundleFileName));
-			}
-			return assets;
-		}
+    public static AssetBundle RegisterAssetBundle(string assetBundleFileName, string folderName = "assets")
+    {
+        BundleId id = new() { assetBundleFileName = assetBundleFileName, folderName = folderName };
+        if (bundleCache.TryGetValue(id, out AssetBundle existingBundle))
+        {
+            Debug.LogWarning($"AssetBundle {assetBundleFileName} in folder {folderName} is already loaded.");
+            return existingBundle;
+        }
+
+        AssetBundle assets;
+        try
+        {
+            assets = Resources.FindObjectsOfTypeAll<AssetBundle>().FirstOrDefault(a => a.name == assetBundleFileName) ??
+                     AssetBundle.LoadFromStream(Assembly.GetExecutingAssembly().GetManifestResourceStream(Assembly.GetExecutingAssembly().GetName().Name + $"{(folderName == "" ? "" : ".") + folderName}." + assetBundleFileName));
+
+            if (assets == null)
+            {
+                throw new FileNotFoundException($"AssetBundle {assetBundleFileName} not found in folder {folderName}.");
+            }
+
+            bundleCache[id] = assets;
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"Failed to load AssetBundle {assetBundleFileName} in folder {folderName}: {e.Message}");
+            throw;
+        }
+        return assets;
+    }
 
 		[PublicAPI]
 		public static AssetID AssetIDFromObject(Object obj)
@@ -333,7 +371,17 @@ public class Location
 			bundleLoader.m_bundleNameToLoaderIndex[""] = 0; // So that AssetLoader ctor doesn't crash
 			
 			AssetID id = AssetIDFromObject(obj);
-			AssetLoader loader = new(id, new AssetLocation("", ""))
+
+			// Ensure the path is unique by appending a unique identifier if necessary
+			string uniquePath = obj.name;
+			int counter = 1;
+			while (bundleLoader.m_assetIDToLoaderIndex.ContainsKey(id))
+			{
+				uniquePath = obj.name + "_" + counter;
+				counter++;
+			}
+
+			AssetLoader loader = new(id, new AssetLocation("", uniquePath))
 			{
 				m_asset = obj,
 				m_referenceCounter = new ReferenceCounter(2),
