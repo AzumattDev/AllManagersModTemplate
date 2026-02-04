@@ -94,19 +94,7 @@ public class CustomSE
 
     private static Localization? _english;
 
-    private static Localization english
-    {
-        get
-        {
-            if (_english == null)
-            {
-                _english = new Localization();
-                _english.SetupLanguage("English");
-            }
-
-            return _english;
-        }
-    }
+    private static Localization english => _english ??= LocalizationCache.ForLanguage("English");
 
     public CustomSE(string assetBundleFileName, string customEffectName, string folderName = "assets") : this(
         EffectManager.RegisterAssetBundle(assetBundleFileName, folderName), customEffectName)
@@ -248,9 +236,31 @@ public class CustomSE
 [PublicAPI]
 public class LocalizeKey
 {
-    public readonly string Key;
+    private static readonly List<LocalizeKey> keys = new();
 
-    public LocalizeKey(string key) => Key = key.Replace("$", "");
+    public readonly string Key;
+    public readonly Dictionary<string, string> Localizations = new();
+
+    public LocalizeKey(string key)
+    {
+        Key = key.Replace("$", "");
+        keys.Add(this);
+    }
+    
+    public void Alias(string alias)
+    {
+        Localizations.Clear();
+        if (!alias.Contains("$"))
+        {
+            alias = $"${alias}";
+        }
+
+        Localizations["alias"] = alias;
+        if (Localization.m_instance != null)
+        {
+            Localization.instance.AddWord(Key, Localization.instance.Localize(alias));
+        }
+    }
 
     public LocalizeKey English(string key) => addForLang("English", key);
     public LocalizeKey Swedish(string key) => addForLang("Swedish", key);
@@ -289,16 +299,71 @@ public class LocalizeKey
 
     private LocalizeKey addForLang(string lang, string value)
     {
-        if (Localization.instance.GetSelectedLanguage() == lang)
+        Localizations[lang] = value;
+        if (Localization.m_instance != null)
         {
-            Localization.instance.AddWord(Key, value);
-        }
-        else if (lang == "English" && !Localization.instance.m_translations.ContainsKey(Key))
-        {
-            Localization.instance.AddWord(Key, value);
+            if (Localization.instance.GetSelectedLanguage() == lang)
+            {
+                Localization.instance.AddWord(Key, value);
+            }
+            else if (lang == "English" && !Localization.instance.m_translations.ContainsKey(Key))
+            {
+                Localization.instance.AddWord(Key, value);
+            }
         }
 
         return this;
+    }
+    
+    [HarmonyPriority(Priority.LowerThanNormal)]
+    internal static void AddLocalizedKeys(Localization __instance, string language)
+    {
+        foreach (LocalizeKey key in keys)
+        {
+            if (key.Localizations.TryGetValue(language, out string Translation) || key.Localizations.TryGetValue("English", out Translation))
+            {
+                __instance.AddWord(key.Key, Translation);
+            }
+            else if (key.Localizations.TryGetValue("alias", out string alias))
+            {
+                __instance.AddWord(key.Key, Localization.instance.Localize(alias));
+            }
+        }
+    }
+}
+
+public static class LocalizationCache
+{
+    private static readonly Dictionary<string, Localization> localizations = new();
+
+    internal static void LocalizationPostfix(Localization __instance, string language)
+    {
+        if (localizations.FirstOrDefault(l => l.Value == __instance).Key is { } oldValue)
+        {
+            localizations.Remove(oldValue);
+        }
+
+        if (!localizations.ContainsKey(language))
+        {
+            localizations.Add(language, __instance);
+        }
+    }
+
+    public static Localization ForLanguage(string? language = null)
+    {
+        if (localizations.TryGetValue(language ?? PlayerPrefs.GetString("language", "English"),
+                out Localization localization))
+        {
+            return localization;
+        }
+
+        localization = new Localization();
+        if (language is not null)
+        {
+            localization.SetupLanguage(language);
+        }
+
+        return localization;
     }
 }
 
@@ -307,11 +372,10 @@ public static class EffectManager
     static EffectManager()
     {
         Harmony harmony = new("org.bepinex.helpers.StatusEffectManager");
-        harmony.Patch(AccessTools.DeclaredMethod(typeof(ObjectDB), nameof(ObjectDB.Awake)),
-            postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(EffectManager), nameof(Patch_ObjectDBInit))));
-        harmony.Patch(AccessTools.DeclaredMethod(typeof(ZNetScene), nameof(ZNetScene.Awake)),
-            postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(EffectManager),
-                nameof(Patch_ZNetSceneAwake))));
+        harmony.Patch(AccessTools.DeclaredMethod(typeof(ObjectDB), nameof(ObjectDB.Awake)), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(EffectManager), nameof(Patch_ObjectDBInit))));
+        harmony.Patch(AccessTools.DeclaredMethod(typeof(ZNetScene), nameof(ZNetScene.Awake)), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(EffectManager), nameof(Patch_ZNetSceneAwake))));
+        harmony.Patch(AccessTools.DeclaredMethod(typeof(Localization), nameof(Localization.LoadCSV)), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(LocalizeKey), nameof(LocalizeKey.AddLocalizedKeys))));
+        harmony.Patch(AccessTools.DeclaredMethod(typeof(Localization), nameof(Localization.SetupLanguage)), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(LocalizationCache), nameof(LocalizationCache.LocalizationPostfix))));
     }
 
     private struct BundleId
@@ -380,32 +444,26 @@ public static class EffectManager
             try
             {
                 GameObject? prefab = __instance.GetPrefab(valuePair.Value);
-                ItemDrop? itemDrop =
-                    prefab ? prefab.GetComponent<ItemDrop>() : prefab.GetComponentInChildren<ItemDrop>();
+                ItemDrop? itemDrop = prefab ? prefab.GetComponent<ItemDrop>() : prefab.GetComponentInChildren<ItemDrop>();
                 Aoe? aoe = prefab ? prefab.GetComponent<Aoe>() : prefab.GetComponentInChildren<Aoe>();
-                EffectArea? effectArea =
-                    prefab ? prefab.GetComponent<EffectArea>() : prefab.GetComponentInChildren<EffectArea>();
+                EffectArea? effectArea = prefab ? prefab.GetComponent<EffectArea>() : prefab.GetComponentInChildren<EffectArea>();
                 if (itemDrop)
                 {
                     switch (valuePair.Key.Type)
                     {
                         case EffectType.Equip:
-                            itemDrop.m_itemData.m_shared.m_equipStatusEffect =
-                                valuePair.Key.Effect;
+                            itemDrop.m_itemData.m_shared.m_equipStatusEffect = valuePair.Key.Effect;
                             break;
                         case EffectType.Attack:
-                            itemDrop.m_itemData.m_shared.m_attackStatusEffect =
-                                valuePair.Key.Effect;
+                            itemDrop.m_itemData.m_shared.m_attackStatusEffect = valuePair.Key.Effect;
                             break;
                         case EffectType.Consume:
-                            itemDrop.m_itemData.m_shared.m_consumeStatusEffect =
-                                valuePair.Key.Effect;
+                            itemDrop.m_itemData.m_shared.m_consumeStatusEffect = valuePair.Key.Effect;
                             break;
                         case EffectType.Set:
                             itemDrop.m_itemData.m_shared.m_setSize = 1;
                             itemDrop.m_itemData.m_shared.m_setName = valuePair.Key.Effect.name;
-                            itemDrop.m_itemData.m_shared.m_setStatusEffect =
-                                valuePair.Key.Effect;
+                            itemDrop.m_itemData.m_shared.m_setStatusEffect = valuePair.Key.Effect;
                             break;
                         default:
                             throw new ArgumentOutOfRangeException();
@@ -423,8 +481,7 @@ public static class EffectManager
                 }
                 else
                 {
-                    Debug.LogWarning(
-                        $"The prefab '{prefab.name}' does not have an ItemDrop, AOE, or EffectArea component. Cannot add the StatusEffect to the prefab.");
+                    Debug.LogWarning($"The prefab '{prefab.name}' does not have an ItemDrop, AOE, or EffectArea component. Cannot add the StatusEffect to the prefab.");
                 }
             }
             catch (Exception e)
@@ -433,4 +490,9 @@ public static class EffectManager
             }
         }
     }
+}
+
+public static class StatusEffectManagerVersion
+{
+    public const string Version = "1.0.0";
 }

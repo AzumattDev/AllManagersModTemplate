@@ -3,7 +3,7 @@
     <Target Name="ILRepacker" AfterTargets="Build">
         <ItemGroup>
             <InputAssemblies Include="$(TargetPath)" />
-            <InputAssemblies Include="$(OutputPath)\ServerSync.dll" />
+            <InputAssemblies Include="$(OutputPath)Libs\ServerSync.dll" />
             <InputAssemblies Include="$(OutputPath)\YamlDotNet.dll" />
             <!-- Only use the line below if you choose to use the DLL and not the classes. If you choose the DLL, be sure to reference and 
              tell it to copy to output directory-->

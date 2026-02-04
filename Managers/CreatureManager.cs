@@ -710,19 +710,7 @@ public class Creature
 
 	private static Localization? _english;
 
-	private static Localization english
-	{
-		get
-		{
-			if (_english == null)
-			{
-				_english = new Localization();
-				_english.SetupLanguage("English");
-			}
-
-			return _english;
-		}
-	}
+	private static Localization english => _english ??= LocalizationCache.ForLanguage("English");
 
 	private static BaseUnityPlugin? _plugin;
 
@@ -806,7 +794,10 @@ public class LocalizeKey
 			alias = $"${alias}";
 		}
 		Localizations["alias"] = alias;
-		Localization.instance.AddWord(Key, Localization.instance.Localize(alias));
+		if (Localization.m_instance != null)
+		{
+			Localization.instance.AddWord(Key, Localization.instance.Localize(alias));
+		}
 	}
 
 	public LocalizeKey English(string key) => addForLang("English", key);
@@ -847,14 +838,18 @@ public class LocalizeKey
 	private LocalizeKey addForLang(string lang, string value)
 	{
 		Localizations[lang] = value;
-		if (Localization.instance.GetSelectedLanguage() == lang)
+		if (Localization.m_instance != null)
 		{
-			Localization.instance.AddWord(Key, value);
+			if (Localization.instance.GetSelectedLanguage() == lang)
+			{
+				Localization.instance.AddWord(Key, value);
+			}
+			else if (lang == "English" && !Localization.instance.m_translations.ContainsKey(Key))
+			{
+				Localization.instance.AddWord(Key, value);
+			}
 		}
-		else if (lang == "English" && !Localization.instance.m_translations.ContainsKey(Key))
-		{
-			Localization.instance.AddWord(Key, value);
-		}
+
 		return this;
 	}
 
@@ -875,6 +870,41 @@ public class LocalizeKey
 	}
 }
 
+public static class LocalizationCache
+{
+	private static readonly Dictionary<string, Localization> localizations = new();
+
+	internal static void LocalizationPostfix(Localization __instance, string language)
+	{
+		if (localizations.FirstOrDefault(l => l.Value == __instance).Key is { } oldValue)
+		{
+			localizations.Remove(oldValue);
+		}
+
+		if (!localizations.ContainsKey(language))
+		{
+			localizations.Add(language, __instance);
+		}
+	}
+
+	public static Localization ForLanguage(string? language = null)
+	{
+		if (localizations.TryGetValue(language ?? PlayerPrefs.GetString("language", "English"),
+			    out Localization localization))
+		{
+			return localization;
+		}
+
+		localization = new Localization();
+		if (language is not null)
+		{
+			localization.SetupLanguage(language);
+		}
+
+		return localization;
+	}
+}
+
 public static class PrefabManager
 {
 	static PrefabManager()
@@ -886,6 +916,7 @@ public static class PrefabManager
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(ObjectDB), nameof(ObjectDB.Awake)), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(Creature), nameof(Creature.UpdateCreatureAis))));
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(FejdStartup), nameof(FejdStartup.Awake)), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(Creature), nameof(Creature.Patch_FejdStartup))));
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(Localization), nameof(Localization.LoadCSV)), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(LocalizeKey), nameof(LocalizeKey.AddLocalizedKeys))));
+		harmony.Patch(AccessTools.DeclaredMethod(typeof(Localization), nameof(Localization.SetupLanguage)), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(LocalizationCache), nameof(LocalizationCache.LocalizationPostfix))));
 		if (!typeof(Heightmap.Biome).GetCustomAttributes(typeof(FlagsAttribute), false).Any())
 		{
 			// ReSharper disable once PossibleMistakenCallToGetType.2
@@ -940,4 +971,9 @@ public static class PrefabManager
 			__instance.m_prefabs.Add(prefab);
 		}
 	}
+}
+
+public static class CreatureManagerVersion
+{
+	public const string Version = "1.12.0";
 }

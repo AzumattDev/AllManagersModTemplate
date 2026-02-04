@@ -145,7 +145,10 @@ public class Skill
 				alias = $"${alias}";
 			}
 			Localizations["alias"] = alias;
-			Localization.instance.AddWord(Key, Localization.instance.Localize(alias));
+			if (Localization.m_instance != null)
+			{
+				Localization.instance.AddWord(Key, Localization.instance.Localize(alias));
+			}
 		}
 
 		public LocalizeKey English(string key) => addForLang("English", key);
@@ -186,14 +189,18 @@ public class Skill
 		private LocalizeKey addForLang(string lang, string value)
 		{
 			Localizations[lang] = value;
-			if (Localization.instance.GetSelectedLanguage() == lang)
+			if (Localization.m_instance != null)
 			{
-				Localization.instance.AddWord(Key, value);
+				if (Localization.instance.GetSelectedLanguage() == lang)
+				{
+					Localization.instance.AddWord(Key, value);
+				}
+				else if (lang == "English" && !Localization.instance.m_translations.ContainsKey(Key))
+				{
+					Localization.instance.AddWord(Key, value);
+				}
 			}
-			else if (lang == "English" && !Localization.instance.m_translations.ContainsKey(Key))
-			{
-				Localization.instance.AddWord(Key, value);
-			}
+
 			return this;
 		}
 
@@ -443,6 +450,11 @@ public class Skill
 	}
 
 	private static ConfigEntry<T> config<T>(string group, string name, T value, string description) => config(group, name, value, new ConfigDescription(description));
+}
+
+public static class SkillManagerVersion
+{
+	public const string Version = "1.7.0";
 }
 
 [PublicAPI]
