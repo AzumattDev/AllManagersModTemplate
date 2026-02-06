@@ -130,6 +130,14 @@ public class Creature
 	public bool CanBeTamed = false;
 	[Description("List of items the creature consumes to get tame.\nFor multiple item names, separate them with a comma.")]
 	public string FoodItems;
+	[Description("How long the creature remains fed after eating.")]
+	public float FedDuration;
+	[Description("Time it takes to tame the creature.")]
+	public float TamingTime;
+	[Description("If the creature spawns tamed.")]
+	public bool SpawnsTamed;
+	[Description("The creature faction the creature belongs to.")]
+	public Character.Faction CreatureFaction;
 	[Description("Sets the time of day the creature can spawn.")]
 	public SpawnTime SpecificSpawnTime = SpawnTime.Always;
 	[Description("Sets the minimum and maximum altitude for the creature to spawn.")]
@@ -303,6 +311,10 @@ public class Creature
 		public readonly CustomConfig<SpawnOption> Spawn = new();
 		public readonly CustomConfig<Toggle> CanBeTamed = new();
 		public readonly CustomConfig<string> ConsumesItemName = new();
+		public readonly CustomConfig<float> FedDuration = new();
+		public readonly CustomConfig<float> TamingTime = new();
+		public readonly CustomConfig<Toggle> SpawnsTamed = new();
+		public readonly CustomConfig<Character.Faction> CreatureFaction = new();
 		public readonly CustomConfig<SpawnTime> SpecificSpawnTime = new();
 		public readonly CustomConfig<Range> RequiredAltitude = new();
 		public readonly CustomConfig<Range> RequiredOceanDepth = new();
@@ -627,7 +639,13 @@ public class Creature
 				ai.m_tamable = null;
 			}
 		}
-
+		Tameable tamable = ai.m_tamable;
+		if (tamable != null)
+		{
+			tamable.m_fedDuration = cfg.FedDuration.get();
+			tamable.m_tamingTime = cfg.TamingTime.get();
+			tamable.m_startsTamed = cfg.SpawnsTamed.get() == Toggle.On;
+		}
 		if (ai is MonsterAI monsterAI)
 		{
 			monsterAI.m_consumeItems.Clear();
@@ -642,12 +660,19 @@ public class Creature
 			}
 		}
 	}
-
-	internal static void UpdateCreatureAis(ObjectDB __instance)
+	
+	private void updateCharacterAttributes(Character character)
 	{
-		foreach (Creature creature in registeredCreatures)
+		CreatureConfig creatureConfig = creatureConfigs[this];
+		character.m_faction = creatureConfig.CreatureFaction.get();
+	}
+
+	internal static void UpdateCreatures(ObjectDB __instance)
+	{
+		foreach (Creature registeredCreature in registeredCreatures)
 		{
-			creature.updateAi(creature.Prefab.GetComponent<BaseAI>());
+			registeredCreature.updateAi(registeredCreature.Prefab.GetComponent<BaseAI>());
+			registeredCreature.updateCharacterAttributes(registeredCreature.Prefab.GetComponent<Character>());
 		}
 	}
 
@@ -913,7 +938,7 @@ public static class PrefabManager
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(ZNetScene), nameof(ZNetScene.Awake)), new HarmonyMethod(AccessTools.DeclaredMethod(typeof(PrefabManager), nameof(Patch_ZNetSceneAwake))));
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(ZNetScene), nameof(ZNetScene.Awake)), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(Creature.DropList), nameof(Creature.DropList.AddDropsToCreature))));
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(SpawnSystem), nameof(SpawnSystem.Awake)), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(Creature), nameof(Creature.AddToSpawnSystem))));
-		harmony.Patch(AccessTools.DeclaredMethod(typeof(ObjectDB), nameof(ObjectDB.Awake)), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(Creature), nameof(Creature.UpdateCreatureAis))));
+		harmony.Patch(AccessTools.DeclaredMethod(typeof(ObjectDB), nameof(ObjectDB.Awake)), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(Creature), nameof(Creature.UpdateCreatures))));
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(FejdStartup), nameof(FejdStartup.Awake)), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(Creature), nameof(Creature.Patch_FejdStartup))));
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(Localization), nameof(Localization.LoadCSV)), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(LocalizeKey), nameof(LocalizeKey.AddLocalizedKeys))));
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(Localization), nameof(Localization.SetupLanguage)), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(LocalizationCache), nameof(LocalizationCache.LocalizationPostfix))));
@@ -975,5 +1000,5 @@ public static class PrefabManager
 
 public static class CreatureManagerVersion
 {
-	public const string Version = "1.12.0";
+	public const string Version = "1.13.0";
 }
