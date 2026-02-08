@@ -294,8 +294,12 @@ public class Creature
 		Prefab = creature;
 		registeredCreatures.Add(this);
 
-		CanBeTamed = creature.GetComponent<Tameable>();
-		FoodItems = string.Join(",", creature.GetComponent<MonsterAI>()?.m_consumeItems.Where(i => i.m_itemData.m_dropPrefab).Select(i => i.m_itemData.m_dropPrefab.name) ?? Enumerable.Empty<string>());
+		CanBeTamed = creature.TryGetComponent(out Tameable tameable);
+		FoodItems = string.Join(",", creature.TryGetComponent(out MonsterAI monsterAI) ? monsterAI.m_consumeItems.Where(i => i.m_itemData.m_dropPrefab).Select(i => i.m_itemData.m_dropPrefab.name) : Enumerable.Empty<string>());
+		FedDuration = tameable ? tameable.m_fedDuration : 0f;
+		TamingTime = tameable ? tameable.m_tamingTime : 0f;
+		SpawnsTamed = tameable && tameable.m_startsTamed;
+		CreatureFaction = creature.TryGetComponent(out Character character) ? character.m_faction : Character.Faction.AnimalsVeg;
 	}
 
 	public LocalizeKey Localize() => new(Prefab.GetComponent<Character>().m_name);
@@ -443,7 +447,10 @@ public class Creature
 					{
 						creature.updateAi(ai);
 					}
-					creature.updateAi(creature.Prefab.GetComponent<BaseAI>());
+					if (creature.Prefab.TryGetComponent(out BaseAI prefabAI))
+					{
+						creature.updateAi(prefabAI);
+					}
 				}
 			}
 
@@ -456,6 +463,26 @@ public class Creature
 			}, "Can be tamed", "Decides, if the creature can be tamed.");
 			tameConfigVisibility.Browsable = cfg.CanBeTamed.get() == Toggle.On;
 			configWithDesc(cfg.ConsumesItemName, () => creature.FoodItems, updateAI, "Food items", new ConfigDescription("The items the creature consumes to get tame.", null, tameConfigVisibility));
+			configWithDesc(cfg.FedDuration, () => creature.FedDuration, updateAI, "Fed duration", new ConfigDescription("How long the creature remains fed after eating.", null, tameConfigVisibility));
+			configWithDesc(cfg.TamingTime, () => creature.TamingTime, updateAI, "Taming time", new ConfigDescription("Time it takes to tame the creature.", null, tameConfigVisibility));
+			configWithDesc(cfg.SpawnsTamed, () => creature.SpawnsTamed ? Toggle.On : Toggle.Off, updateAI, "Spawns tamed", new ConfigDescription("If the creature spawns tamed.", null, tameConfigVisibility));
+			configWithDesc(cfg.CreatureFaction, () => creature.CreatureFaction, () =>
+			{
+				if (ZNetScene.instance)
+				{
+					if (creature.Prefab.TryGetComponent(out Character prefabCharacter))
+					{
+						creature.updateCharacterAttributes(prefabCharacter);
+					}
+					foreach (Character c in Object.FindObjectsOfType<Character>())
+					{
+						if (c.m_nview?.GetPrefabName() == creature.Prefab.name)
+						{
+							creature.updateCharacterAttributes(c);
+						}
+					}
+				}
+			}, "Creature faction", new ConfigDescription("The faction the creature belongs to.", null, tameConfigVisibility));
 
 			ConfigurationManagerAttributes spawnConfigVisibility = new();
 			ConfigurationManagerAttributes dropConfigVisibility = new();
@@ -671,8 +698,14 @@ public class Creature
 	{
 		foreach (Creature registeredCreature in registeredCreatures)
 		{
-			registeredCreature.updateAi(registeredCreature.Prefab.GetComponent<BaseAI>());
-			registeredCreature.updateCharacterAttributes(registeredCreature.Prefab.GetComponent<Character>());
+			if (registeredCreature.Prefab.TryGetComponent(out BaseAI ai))
+			{
+				registeredCreature.updateAi(ai);
+			}
+			if (registeredCreature.Prefab.TryGetComponent(out Character character))
+			{
+				registeredCreature.updateCharacterAttributes(character);
+			}
 		}
 	}
 
