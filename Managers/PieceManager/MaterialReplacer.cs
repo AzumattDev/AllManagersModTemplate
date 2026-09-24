@@ -84,7 +84,7 @@ namespace PieceManager
                 {
                     bundleShaders = bundle.isStreamedSceneAssetBundle && bundle
                         ? bundle.GetAllAssetNames().Select(bundle.LoadAsset<Shader>).Where(shader => shader != null)
-                        : bundle.LoadAllAssets<Shader>();
+                        : bundle!.LoadAllAssets<Shader>();
                 }
                 catch (Exception)
                 {
@@ -123,7 +123,7 @@ namespace PieceManager
             // Additional null check in case 'originalMaterial' somehow is null:
             if (originalMaterial == null)
             {
-                return null;
+                return null!;
             }
 
             string replacementPrefix = isJotunnMock ? "JVLmock_" : "_REPLACE_";

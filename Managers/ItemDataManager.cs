@@ -116,10 +116,7 @@ public abstract class ItemData
 	}
 }
 
-public sealed class StringItemData : ItemData
-{
-	
-}
+public sealed class StringItemData : ItemData;
 
 [PublicAPI]
 public class ItemInfo : IEnumerable<ItemData>
@@ -478,7 +475,11 @@ public class ItemInfo : IEnumerable<ItemData>
 			string fullKey = dataKey(compoundKey);
 			if (itemData.m_customData.ContainsKey(fullKey))
 			{
-				itemData.Data().constructDataObj(fullKey, compoundKey);
+				ItemInfo info = itemData.Data();
+				if (!info.data.ContainsKey(compoundKey))
+				{
+					info.constructDataObj(fullKey, compoundKey);
+				}
 			}
 		}
 	}
@@ -530,7 +531,15 @@ public class ItemInfo : IEnumerable<ItemData>
 
 	private static ItemDrop.ItemData? checkingForStackableItemData;
 
-	private static void SaveCheckingForStackableItemData(ItemDrop.ItemData item) => checkingForStackableItemData = item;
+	private static void SaveCheckingForStackableItemData(ItemDrop.ItemData item)
+	{
+		if (item == awakeningItem)
+		{
+			awakeningItem = null;
+		}
+		checkingForStackableItemData = item;
+	}
+
 	private static void ResetCheckingForStackableItemData() => checkingForStackableItemData = null;
 
 	private static Dictionary<string, string>? newValuesOnStackable;
@@ -786,10 +795,11 @@ public class ItemInfo : IEnumerable<ItemData>
 			harmony.Patch(method, prefix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(SavePrefix)), Priority.First));
 		}
 
-		harmony.Patch(AccessTools.DeclaredMethod(typeof(Inventory), nameof(Inventory.AddItem), new[] { typeof(ItemDrop.ItemData), typeof(int), typeof(int), typeof(int) }), prefix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(CheckItemDataStackableAddItem))), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(ApplyCustomItemDataStackableAddItem))));
+		harmony.Patch(AccessTools.DeclaredMethod(typeof(Inventory), nameof(Inventory.AddItem), new[] { typeof(ItemDrop.ItemData), typeof(int), typeof(int), typeof(int), typeof(bool) }), prefix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(CheckItemDataStackableAddItem))), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(ApplyCustomItemDataStackableAddItem))));
 
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(Inventory), nameof(Inventory.CanAddItem), new[] { typeof(ItemDrop.ItemData), typeof(int) }), prefix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(SaveCheckingForStackableItemData))), finalizer: new HarmonyMethod(typeof(ItemInfo), nameof(ResetCheckingForStackableItemData)));
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(Inventory), nameof(Inventory.AddItem), new[] { typeof(ItemDrop.ItemData) }), prefix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(SaveCheckingForStackableItemData))), finalizer: new HarmonyMethod(typeof(ItemInfo), nameof(ResetCheckingForStackableItemData)));
+		harmony.Patch(AccessTools.DeclaredMethod(typeof(Inventory), nameof(Inventory.AddItem), new[] { typeof(ItemDrop.ItemData), typeof(Vector2i) }), prefix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(SaveCheckingForStackableItemData))), finalizer: new HarmonyMethod(typeof(ItemInfo), nameof(ResetCheckingForStackableItemData)));
 
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(Inventory), nameof(Inventory.FindFreeStackSpace)), transpiler: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(CheckStackableInFindFreeStackMethods))));
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(Inventory), nameof(Inventory.FindFreeStackItem)), transpiler: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(CheckStackableInFindFreeStackMethods))), prefix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(ResetNewValuesOnStackable))), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(ApplyNewValuesOnStackable))));
@@ -805,7 +815,7 @@ public class ItemInfo : IEnumerable<ItemData>
 		}
 		// Note: Inventory load implicitly handled by ItemData.Clone() handling within AddItem
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(Player), nameof(Player.Load)), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(RegisterForceLoadedTypesOnPlayerLoaded)), Priority.VeryHigh));
-		harmony.Patch(AccessTools.DeclaredMethod(typeof(Inventory), nameof(Inventory.AddItem), new[] { typeof(string), typeof(int), typeof(int), typeof(int), typeof(long), typeof(string), typeof(Vector2i), typeof(bool) }), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(RegisterForceLoadedTypesAddItem)), Priority.First));
+		harmony.Patch(AccessTools.DeclaredMethod(typeof(Inventory), nameof(Inventory.AddItem), new[] { typeof(string), typeof(int), typeof(int), typeof(int), typeof(long), typeof(string), typeof(Vector2i), typeof(bool), typeof(bool), typeof(bool) }), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(RegisterForceLoadedTypesAddItem)), Priority.First));
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(ItemDrop), nameof(ItemDrop.Awake)), prefix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(TrackAwakeningItem))), transpiler: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(ImportCustomDataOnUpgrade)), Priority.First), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(ItemDropAwake)), Priority.First));
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(ItemDrop), nameof(ItemDrop.Awake)), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(ItemDropAwakeDelayed)), Priority.First - 1));
 		harmony.Patch(AccessTools.DeclaredMethod(typeof(ItemDrop.ItemData), nameof(ItemDrop.ItemData.Clone)), prefix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(ItemDataClonePrefix))), postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(ItemInfo), nameof(ItemDataClonePostfix)), Priority.HigherThanNormal));
