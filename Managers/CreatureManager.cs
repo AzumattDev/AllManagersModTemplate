@@ -248,7 +248,7 @@ public class Creature
 						{
 							min = 1;
 						}
-						if (range.Length == 1 || !int.TryParse(range[0], out int max))
+						if (range.Length == 1 || !int.TryParse(range[1], out int max))
 						{
 							max = min;
 						}
